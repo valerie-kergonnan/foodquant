@@ -1,5 +1,10 @@
-FROM dunglas/frankenphp:latest
+FROM php:8.2-apache
 
-RUN install-php-extensions pdo_mysql curl
+RUN docker-php-ext-install pdo_mysql
+RUN a2enmod rewrite
 
-COPY . /app/public
+COPY . /var/www/html/
+
+EXPOSE 80
+
+CMD ["apache2-foreground"]
