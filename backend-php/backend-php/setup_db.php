@@ -1,5 +1,16 @@
 <?php
+ini_set('display_errors', 1);
+error_reporting(E_ALL);
+header('Content-Type: text/plain');
+
+echo "1. Début du script\n";
+
+echo "2. MYSQLHOST = " . ($_ENV['MYSQLHOST'] ?? $_SERVER['MYSQLHOST'] ?? getenv('MYSQLHOST') ?? 'NON TROUVÉ') . "\n";
+
+echo "3. Chargement db.php\n";
 require_once 'db.php';
+
+echo "4. Connexion OK\n";
 
 try {
     $pdo->exec("
@@ -18,6 +29,7 @@ try {
             date_inscription DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ");
+    echo "5. Table utilisateurs OK\n";
 
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS historique_repas (
@@ -32,8 +44,8 @@ try {
             UNIQUE KEY unique_jour (utilisateur_id, date_repas)
         )
     ");
-
-    echo json_encode(["success" => true, "message" => "Tables créées !"]);
+    echo "6. Table historique_repas OK\n";
+    echo "SUCCES : Tables créées !";
 } catch (PDOException $e) {
-    echo json_encode(["success" => false, "message" => $e->getMessage()]);
+    echo "ERREUR : " . $e->getMessage();
 }
