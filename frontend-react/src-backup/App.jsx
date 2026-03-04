@@ -3,10 +3,6 @@ import Accueil from './components/Accueil';
 import Profil from './components/Profil';
 import MaJournee from './components/MaJournee';
 import NavBar from './components/NavBar';
-import Login from './components/Login';
-import Dashboard from './components/Dashboard';
-
-const API_URL = 'https://foodquant-production.up.railway.app';
 
 function App() {
   // ─── Helpers ───
@@ -23,14 +19,12 @@ function App() {
   };
 
   // ─── State ───
-  const [user, setUser] = useState(() => getSaved('user', null));
   const [recipes, setRecipes] = useState(() => getSaved('recipes', []));
   const [nutrimentsJour, setNutrimentsJour] = useState(() => getSaved('nutrimentsJour', null));
   const [besoins, setBesoins] = useState(() => getSaved('besoins', { calories: 0, proteines: 0 }));
   const [page, setPage] = useState(() => getSaved('currentPage', 'accueil'));
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('');
-  const [menuSauvegarde, setMenuSauvegarde] = useState(false);
 
   // ─── Sauvegarde auto ───
   useEffect(() => {
@@ -50,23 +44,6 @@ function App() {
     }
   }, [nutrimentsJour]);
 
-  // ─── Auth ───
-  const handleLogin = (userData) => {
-    setUser(userData);
-    localStorage.setItem('user', JSON.stringify(userData));
-    setPage('profil');
-  };
-
-  const handleLogout = () => {
-    setUser(null);
-    localStorage.removeItem('user');
-    setRecipes([]);
-    setNutrimentsJour(null);
-    localStorage.removeItem('recipes');
-    localStorage.removeItem('nutrimentsJour');
-    setPage('accueil');
-  };
-
   // ─── Calcul des totaux ───
   const calculerTotaux = (listeRecettes) => {
     let totalCal = 0;
@@ -79,7 +56,7 @@ function App() {
     return { totalCal: Math.round(totalCal), totalProt: Math.round(totalProt) };
   };
 
-  // ─── Messages de chargement ───
+  // ─── Messages de chargement aléatoires ───
   const messagesChargement = [
     "🍳 Préparation du petit-déjeuner...",
     "🥗 Sélection de recettes fraîches...",
@@ -88,40 +65,12 @@ function App() {
     "✨ Finalisation de ton menu..."
   ];
 
-  // ─── Sauvegarder le menu du jour ───
-  const sauvegarderMenu = async () => {
-    if (!user || recipes.length !== 4) return;
-
-    const { totalCal, totalProt } = calculerTotaux(recipes);
-
-    try {
-      const response = await fetch(`${API_URL}/historique.php?action=sauvegarder`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          recettes: recipes,
-          totalCalories: totalCal,
-          totalProteines: totalProt,
-          date: new Date().toISOString().split('T')[0]
-        })
-      });
-      const data = await response.json();
-      if (data.success) {
-        setMenuSauvegarde(true);
-        setTimeout(() => setMenuSauvegarde(false), 3000);
-      }
-    } catch (error) {
-      console.error("Erreur sauvegarde:", error);
-    }
-  };
-
   // ─── Remplacer une seule recette ───
   const remplacerUneRecette = async (indexARemplacer) => {
     setLoading(true);
     setLoadingMessage("🔄 Recherche d'une alternative...");
 
-    const url = `${API_URL}/recettes.php?targetCalories=${besoins.calories}&refreshIndex=${indexARemplacer}`;
+    const url = `https://foodquant-production.up.railway.app/recettes.php?targetCalories=${besoins.calories}&refreshIndex=${indexARemplacer}`;
     try {
       const response = await fetch(url);
       if (!response.ok) throw new Error("Erreur réseau");
@@ -129,11 +78,11 @@ function App() {
 
       if (data) {
         const nouvellesRecettes = [...recipes];
+        // L'API renvoie un tableau de 4, on prend celle à l'index voulu
         nouvellesRecettes[indexARemplacer] = Array.isArray(data) ? data[indexARemplacer] : data;
         setRecipes(nouvellesRecettes);
         const { totalCal, totalProt } = calculerTotaux(nouvellesRecettes);
         setNutrimentsJour({ calories: totalCal, protein: totalProt });
-        setMenuSauvegarde(false);
       }
     } catch (error) {
       console.error("Erreur lors du remplacement :", error);
@@ -145,7 +94,6 @@ function App() {
   // ─── Chercher toutes les recettes ───
   const chercherRecettes = async (donnees) => {
     setLoading(true);
-    setMenuSauvegarde(false);
     let messageIndex = 0;
     setLoadingMessage(messagesChargement[0]);
 
@@ -169,25 +117,7 @@ function App() {
     };
     setBesoins(nouveauxBesoins);
 
-    // Mettre à jour le profil en base si connecté
-    if (user) {
-      try {
-        await fetch(`${API_URL}/auth.php?action=updateProfil`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userId: user.id,
-            ...donnees,
-            calories: nouveauxBesoins.calories
-          })
-        });
-      } catch (e) {
-        console.error("Erreur update profil:", e);
-      }
-    }
-
-    const url = `${API_URL}/recettes.php?targetCalories=${Math.round(caloriesFinales)}&diet=${donnees.diet || ''}`;
-
+    const url = `https://foodquant-production.up.railway.app/recettes.php?targetCalories=${Math.round(caloriesFinales)}&diet=${donnees.diet || ''}`;
     try {
       const response = await fetch(url);
       if (!response.ok) throw new Error("Erreur réseau");
@@ -225,10 +155,7 @@ function App() {
   // ─── Rendu principal ───
   return (
     <div className="flex flex-col items-center min-h-screen p-6 pb-24 font-sans text-gray-800">
-      
-      {page === "accueil" && <Accueil onCommencer={() => setPage(user ? "profil" : "login")} />}
-
-      {page === "login" && <Login onLogin={handleLogin} />}
+      {page === "accueil" && <Accueil onCommencer={() => setPage("profil")} />}
 
       {page === "profil" && (
         <Profil onResultats={chercherRecettes} />
@@ -236,30 +163,13 @@ function App() {
 
       {page === "majournee" && (
         recipes.length === 4 ? (
-          <div className="w-full">
-            <MaJournee
-              recipes={recipes}
-              nutrients={nutrimentsJour}
-              besoins={besoins}
-              onRefreshRecipe={remplacerUneRecette}
-              onEditProfil={() => setPage("profil")}
-            />
-            {/* Bouton sauvegarder */}
-            {user && (
-              <div className="w-full max-w-md mx-auto px-4 mb-8">
-                <button
-                  onClick={sauvegarderMenu}
-                  className={`w-full py-4 rounded-2xl font-bold text-lg transition-all ${
-                    menuSauvegarde
-                      ? 'bg-green-500 text-white'
-                      : 'bg-linear-to-r from-amber-500 to-amber-600 text-white shadow-lg hover:-translate-y-1'
-                  }`}
-                >
-                  {menuSauvegarde ? '✅ Menu sauvegardé !' : '💾 Sauvegarder mon menu du jour'}
-                </button>
-              </div>
-            )}
-          </div>
+          <MaJournee
+            recipes={recipes}
+            nutrients={nutrimentsJour}
+            besoins={besoins}
+            onRefreshRecipe={remplacerUneRecette}
+            onEditProfil={() => setPage("profil")}
+          />
         ) : (
           <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
             <p className="text-gray-500 text-lg">Aucun repas généré</p>
@@ -273,28 +183,7 @@ function App() {
         )
       )}
 
-      {page === "dashboard" && (
-        user ? (
-          <Dashboard user={user} besoins={besoins} />
-        ) : (
-          <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-            <p className="text-gray-500 text-lg">Connecte-toi pour voir tes stats</p>
-            <button
-              onClick={() => setPage("login")}
-              className="bg-amber-500 text-white font-bold py-3 px-6 rounded-2xl"
-            >
-              🔑 Se connecter
-            </button>
-          </div>
-        )
-      )}
-
-      <NavBar 
-        pageActive={page} 
-        onChangePage={setPage} 
-        isLoggedIn={!!user} 
-        onLogout={handleLogout}
-      />
+      <NavBar pageActive={page} onChangePage={setPage} />
     </div>
   );
 }
