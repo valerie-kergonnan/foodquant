@@ -1,12 +1,13 @@
 <?php
 // Détecte si on est en local ou sur Railway
-if (getenv('MYSQLHOST')) {
+$host = $_ENV['MYSQLHOST'] ?? $_SERVER['MYSQLHOST'] ?? getenv('MYSQLHOST') ?: null;
+
+if ($host) {
     // Railway
-    $host = getenv('MYSQLHOST');
-    $dbname = getenv('MYSQLDATABASE');
-    $username = getenv('MYSQLUSER');
-    $password = getenv('MYSQLPASSWORD');
-    $port = getenv('MYSQLPORT');
+    $dbname = $_ENV['MYSQLDATABASE'] ?? $_SERVER['MYSQLDATABASE'] ?? getenv('MYSQLDATABASE');
+    $username = $_ENV['MYSQLUSER'] ?? $_SERVER['MYSQLUSER'] ?? getenv('MYSQLUSER');
+    $password = $_ENV['MYSQLPASSWORD'] ?? $_SERVER['MYSQLPASSWORD'] ?? getenv('MYSQLPASSWORD');
+    $port = $_ENV['MYSQLPORT'] ?? $_SERVER['MYSQLPORT'] ?? getenv('MYSQLPORT');
 } else {
     // Local
     $host = "localhost";
