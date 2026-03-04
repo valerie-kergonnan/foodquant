@@ -70,7 +70,7 @@ function App() {
     setLoading(true);
     setLoadingMessage("🔄 Recherche d'une alternative...");
 
-    const url = `http://localhost/foodquant/backend-php/recettes.php?targetCalories=${besoins.calories}&refreshIndex=${indexARemplacer}`;
+    const url = `https://foodquant-production.up.railway.app/recettes.php?targetCalories=${besoins.calories}&refreshIndex=${indexARemplacer}`;
     try {
       const response = await fetch(url);
       if (!response.ok) throw new Error("Erreur réseau");
@@ -117,8 +117,7 @@ function App() {
     };
     setBesoins(nouveauxBesoins);
 
-    const url = `http://localhost/foodquant/backend-php/recettes.php?targetCalories=${Math.round(caloriesFinales)}&diet=${donnees.diet || ''}`;
-
+    const url = `https://foodquant-production.up.railway.app/recettes.php?targetCalories=${Math.round(caloriesFinales)}&diet=${donnees.diet || ''}`;
     try {
       const response = await fetch(url);
       if (!response.ok) throw new Error("Erreur réseau");
