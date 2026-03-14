@@ -31,9 +31,10 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('');
   const [menuSauvegarde, setMenuSauvegarde] = useState(false);
-  // ── FIX 1 : état pour le loading et les erreurs du bouton sauvegarder ──
   const [sauvLoading, setSauvLoading] = useState(false);
   const [sauvErreur, setSauvErreur] = useState('');
+  // V2 : Message de bienvenue
+  const [toast, setToast] = useState(null);
 
   // ─── Sauvegarde auto ───
   useEffect(() => {
@@ -54,9 +55,19 @@ function App() {
   }, [nutrimentsJour]);
 
   // ─── Auth ───
-  const handleLogin = (userData) => {
+  // V2 : handleLogin reçoit le mode pour le message de bienvenue
+  const handleLogin = (userData, mode) => {
     setUser(userData);
     localStorage.setItem('user', JSON.stringify(userData));
+
+    const prenom = userData.prenom || 'toi';
+    if (mode === 'inscription') {
+      setToast({ emoji: '🎉', message: `Bienvenue ${prenom} ! Commence par remplir ton profil.` });
+    } else {
+      setToast({ emoji: '👋', message: `Content de te revoir ${prenom} !` });
+    }
+    setTimeout(() => setToast(null), 4000);
+
     setPage('profil');
   };
 
@@ -92,11 +103,9 @@ function App() {
   ];
 
   // ─── Sauvegarder le menu du jour ───
-  // FIX 2 : ajout loading, feedback erreur, et compatibilité user.id / user.idutilisateurs
   const sauvegarderMenu = async () => {
     if (!user || recipes.length !== 4) return;
 
-    // FIX 3 : accepter user.id OU user.idutilisateurs (selon ce que auth.php renvoie)
     const userId = user.id || user.idutilisateurs;
     if (!userId) {
       setSauvErreur("❌ Erreur : utilisateur non identifié. Reconnectez-vous.");
@@ -109,14 +118,12 @@ function App() {
 
     const { totalCal, totalProt } = calculerTotaux(recipes);
 
-    // FIX 8 : nettoyer les recettes — ne garder que l'essentiel
-    // Évite l'erreur "Data too long for column recettes_json"
-    // car Spoonacular renvoie des dizaines de nutriments par recette
     const recettesLegeres = recipes.map(r => {
       const nuts = r.nutrition?.nutrients || [];
       return {
         id: r.id,
         title: r.title,
+        title_fr: r.title_fr || r.title,
         image: r.image,
         sourceUrl: r.sourceUrl,
         calories: Math.round(nuts.find(n => n.name === "Calories")?.amount || 0),
@@ -139,7 +146,6 @@ function App() {
         })
       });
 
-      // FIX 4 : vérifier que la réponse HTTP est ok
       if (!response.ok) {
         throw new Error(`Erreur serveur (${response.status})`);
       }
@@ -155,7 +161,6 @@ function App() {
       }
     } catch (error) {
       console.error("Erreur sauvegarde:", error);
-      // FIX 5 : afficher l'erreur à l'utilisateur au lieu de l'ignorer
       setSauvErreur("❌ Impossible de sauvegarder. Vérifie ta connexion.");
       setTimeout(() => setSauvErreur(''), 4000);
     } finally {
@@ -216,7 +221,6 @@ function App() {
     };
     setBesoins(nouveauxBesoins);
 
-    // Mettre à jour le profil en base si connecté
     if (user) {
       try {
         await fetch(`${API_URL}/auth.php?action=updateProfil`, {
@@ -273,6 +277,26 @@ function App() {
   return (
     <div className="flex flex-col items-center min-h-screen p-6 pb-24 font-sans text-gray-800">
       
+      {/* V2 : Toast de bienvenue */}
+      {toast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 animate-toastIn">
+          <div className="bg-white border border-amber-200 shadow-xl rounded-2xl px-6 py-4 flex items-center gap-3 max-w-sm">
+            <span className="text-2xl">{toast.emoji}</span>
+            <p className="text-sm font-bold text-gray-700">{toast.message}</p>
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes toastIn {
+          from { opacity: 0; transform: translate(-50%, -20px); }
+          to { opacity: 1; transform: translate(-50%, 0); }
+        }
+        .animate-toastIn {
+          animation: toastIn 0.4s ease-out;
+        }
+      `}</style>
+
       {page === "accueil" && <Accueil onCommencer={() => setPage(user ? "profil" : "login")} />}
 
       {page === "login" && <Login onLogin={handleLogin} />}
@@ -291,7 +315,6 @@ function App() {
               onRefreshRecipe={remplacerUneRecette}
               onEditProfil={() => setPage("profil")}
             />
-            {/* ── FIX 6 : Bouton sauvegarder corrigé ── */}
             {user && (
               <div className="w-full max-w-md mx-auto px-4 mb-8">
                 <button
@@ -312,7 +335,6 @@ function App() {
                       : '💾 Sauvegarder mon menu du jour'
                   }
                 </button>
-                {/* FIX 7 : message d'erreur visible */}
                 {sauvErreur && (
                   <p className="text-red-500 text-sm font-medium text-center mt-2 animate-pulse">
                     {sauvErreur}

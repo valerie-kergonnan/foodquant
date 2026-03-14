@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 function Login({ onLogin }) {
-  const [mode, setMode] = useState('connexion'); // 'connexion' ou 'inscription'
+  const [mode, setMode] = useState('connexion');
   const [form, setForm] = useState({ prenom: '', email: '', mot_de_passe: '' });
   const [erreur, setErreur] = useState('');
   const [loading, setLoading] = useState(false);
@@ -28,11 +28,12 @@ function Login({ onLogin }) {
 
       if (data.success) {
         localStorage.setItem('user', JSON.stringify(data.user));
-        onLogin(data.user);
+        // V2 : on transmet aussi le mode pour le message de bienvenue
+        onLogin(data.user, mode);
       } else {
         setErreur(data.message);
       }
-    } catch (error) {
+    } catch  {
       setErreur("Erreur de connexion au serveur.");
     } finally {
       setLoading(false);
