@@ -146,7 +146,7 @@ function MaJournee({ recipes, nutrients, besoins, onRefreshRecipe, onEditProfil 
                 <div className="h-52 overflow-hidden relative">
                   <img
                     src={repas.donnee.image}
-                    alt={repas.donnee.title}
+                    alt={repas.donnee.title_fr}
                     className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                   />
                   {isRefreshing && (
@@ -158,7 +158,7 @@ function MaJournee({ recipes, nutrients, besoins, onRefreshRecipe, onEditProfil 
 
                 <div className="p-6">
                   <h3 className="font-extrabold text-gray-800 text-xl leading-tight mb-4 group-hover:text-amber-600 transition-colors">
-                    {repas.donnee.title}
+                    {repas.donnee.title_fr}
                   </h3>
 
                   {/* Mini-anneaux par repas */}

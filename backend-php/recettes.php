@@ -5,26 +5,24 @@ header("Access-Control-Allow-Headers: Content-Type");
 header("Content-Type: application/json");
 if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') exit;
 
+// ─── V2 : Import du service de traduction ───
+require_once __DIR__ . '/traduction.php';
+
 $apiKey = getenv('SPOONACULAR_KEY') ?: "VOTRE_CLE_ICI";
 $totalCalories = $_REQUEST['targetCalories'] ?? 2000;
 $diet = $_REQUEST['diet'] ?? '';
 $refreshIndex = isset($_REQUEST['refreshIndex']) ? (int)$_REQUEST['refreshIndex'] : null;
 
-// ─── Cache fichier (évite de brûler les points API) ───
+// ─── Cache fichier ───
 $cacheDir = __DIR__ . '/cache';
 if (!is_dir($cacheDir)) mkdir($cacheDir, 0755, true);
 
-// FIX 1 : Fichier marqueur quand le quota est dépassé (évite de retenter pendant 1h)
 $quotaLockFile = "$cacheDir/_quota_locked.txt";
 
 function isQuotaLocked($quotaLockFile) {
     if (file_exists($quotaLockFile)) {
         $lockTime = (int)file_get_contents($quotaLockFile);
-        // Bloqué pendant 1h après une erreur 402
-        if (time() - $lockTime < 3600) {
-            return true;
-        }
-        // Le verrou a expiré, on le supprime
+        if (time() - $lockTime < 3600) return true;
         unlink($quotaLockFile);
     }
     return false;
@@ -34,7 +32,6 @@ function lockQuota($quotaLockFile) {
     file_put_contents($quotaLockFile, time());
 }
 
-// FIX 2 : Arrondir les calories par tranche de 50 pour mutualiser le cache
 function getCacheKey($type, $calories, $diet) {
     $calArrondi = round($calories / 50) * 50;
     return md5("$type-$calArrondi-$diet");
@@ -49,7 +46,6 @@ function getFromCache($key, $cacheDir, $duree = 3600) {
     return null;
 }
 
-// FIX 3 : Si le cache frais est vide, chercher un cache expiré (mieux que rien)
 function getFromCacheExpired($key, $cacheDir) {
     $fichier = "$cacheDir/$key.json";
     if (file_exists($fichier)) {
@@ -67,7 +63,6 @@ function saveToCache($key, $data, $cacheDir) {
 function chercherRepas($type, $calories, $apiKey, $diet, $index, $cacheDir, $quotaLockFile, $forceRefresh = false) {
     $cacheKey = getCacheKey($type, $calories, $diet);
 
-    // Vérifier le cache (sauf si refresh forcé)
     if (!$forceRefresh) {
         $cached = getFromCache($cacheKey, $cacheDir);
         if ($cached) {
@@ -77,10 +72,8 @@ function chercherRepas($type, $calories, $apiKey, $diet, $index, $cacheDir, $quo
         }
     }
 
-    // FIX 4 : Si le quota est verrouillé, ne pas appeler l'API
     if (isQuotaLocked($quotaLockFile)) {
-        error_log("🔒 Quota verrouillé — utilisation cache/fallback pour $type");
-        // Essayer le cache expiré
+        error_log("🔒 Quota verrouillé — cache/fallback pour $type");
         $expired = getFromCacheExpired($cacheKey, $cacheDir);
         if ($expired) {
             $recipe = $expired[array_rand($expired)];
@@ -89,9 +82,7 @@ function chercherRepas($type, $calories, $apiKey, $diet, $index, $cacheDir, $quo
         return getFallback($type, $calories, $index);
     }
 
-    // ─── Appel API Spoonacular ───
     $baseUrl = "https://api.spoonacular.com/recipes/complexSearch";
-
     $params = [
         'apiKey'               => $apiKey,
         'type'                 => $type,
@@ -102,10 +93,7 @@ function chercherRepas($type, $calories, $apiKey, $diet, $index, $cacheDir, $quo
         'addRecipeInformation' => 'true',
         'addRecipeNutrition'   => 'true',
     ];
-
-    if (!empty($diet)) {
-        $params['diet'] = $diet;
-    }
+    if (!empty($diet)) $params['diet'] = $diet;
 
     $url = $baseUrl . "?" . http_build_query($params);
     error_log("🌐 API CALL pour $type (index $index)");
@@ -118,58 +106,40 @@ function chercherRepas($type, $calories, $apiKey, $diet, $index, $cacheDir, $quo
     $rawResponse = curl_exec($ch);
     $httpCode    = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $curlError   = curl_error($ch);
-    
 
-    // FIX 5 : Gestion spécifique des erreurs 402 et 429
     if ($httpCode === 402) {
-        error_log("🚫 QUOTA DÉPASSÉ (402) — verrouillage pendant 1h");
+        error_log("🚫 QUOTA DÉPASSÉ (402)");
         lockQuota($quotaLockFile);
-        // Essayer le cache expiré avant le fallback
         $expired = getFromCacheExpired($cacheKey, $cacheDir);
-        if ($expired) {
-            $recipe = $expired[array_rand($expired)];
-            return formatRecipe($recipe, $calories, $index);
-        }
+        if ($expired) return formatRecipe($expired[array_rand($expired)], $calories, $index);
         return getFallback($type, $calories, $index);
     }
 
     if ($httpCode === 429) {
-        error_log("⏳ RATE LIMIT (429) — fallback pour $type");
+        error_log("⏳ RATE LIMIT (429)");
         $expired = getFromCacheExpired($cacheKey, $cacheDir);
-        if ($expired) {
-            $recipe = $expired[array_rand($expired)];
-            return formatRecipe($recipe, $calories, $index);
-        }
+        if ($expired) return formatRecipe($expired[array_rand($expired)], $calories, $index);
         return getFallback($type, $calories, $index);
     }
 
     if ($curlError || $httpCode !== 200) {
         error_log("❌ Spoonacular error [$type] HTTP $httpCode : $curlError");
         $expired = getFromCacheExpired($cacheKey, $cacheDir);
-        if ($expired) {
-            $recipe = $expired[array_rand($expired)];
-            return formatRecipe($recipe, $calories, $index);
-        }
+        if ($expired) return formatRecipe($expired[array_rand($expired)], $calories, $index);
         return getFallback($type, $calories, $index);
     }
 
     $decoded = json_decode($rawResponse, true);
     $results = $decoded['results'] ?? [];
-
     error_log("📦 Résultats pour $type : " . count($results));
 
     if (count($results) > 0) {
         saveToCache($cacheKey, $results, $cacheDir);
-        $recipe = $results[array_rand($results)];
-        return formatRecipe($recipe, $calories, $index);
+        return formatRecipe($results[array_rand($results)], $calories, $index);
     }
 
-    // Aucun résultat — essayer cache expiré
     $expired = getFromCacheExpired($cacheKey, $cacheDir);
-    if ($expired) {
-        $recipe = $expired[array_rand($expired)];
-        return formatRecipe($recipe, $calories, $index);
-    }
+    if ($expired) return formatRecipe($expired[array_rand($expired)], $calories, $index);
 
     error_log("⚠️ FALLBACK pour $type (index $index)");
     return getFallback($type, $calories, $index);
@@ -200,7 +170,6 @@ function formatRecipe($recipe, $calories, $index) {
     ];
 }
 
-// FIX 6 : Fallback élargi avec plus de variété par type de repas
 function getFallback($type, $calories, $index) {
     $fallbacks = [
         "breakfast" => [
@@ -231,11 +200,9 @@ function getFallback($type, $calories, $index) {
         ],
     ];
 
-    // Sélectionner le bon pool selon le type
     $pool = $fallbacks[$type] ?? $fallbacks["main course"];
     $choix = $pool[array_rand($pool)];
 
-    // Protéines estimées selon le type de repas
     $protEstimee = match($type) {
         'breakfast'   => rand(10, 20),
         'snack'       => rand(5, 12),
@@ -243,20 +210,23 @@ function getFallback($type, $calories, $index) {
         default       => 15
     };
 
+    // Fallback déjà en français
     return [
-        "id"        => 100 + $index + rand(0, 900),
-        "title"     => $choix['title'],
-        "image"     => "https://img.spoonacular.com/recipes/" . $choix['img'] . "-312x231.jpg",
-        "sourceUrl" => "",
-        "calories"  => $calories,
-        "protein"   => $protEstimee . "g",
-        "nutrition" => [
+        "id"             => 100 + $index + rand(0, 900),
+        "title"          => $choix['title'],
+        "title_fr"       => $choix['title'],
+        "ingredients_fr" => [],
+        "image"          => "https://img.spoonacular.com/recipes/" . $choix['img'] . "-312x231.jpg",
+        "sourceUrl"      => "",
+        "calories"       => $calories,
+        "protein"        => $protEstimee . "g",
+        "nutrition"      => [
             "nutrients" => [
                 ["name" => "Calories", "amount" => $calories],
                 ["name" => "Protein",  "amount" => $protEstimee]
             ]
         ],
-        "source"    => "fallback"
+        "source"         => "fallback"
     ];
 }
 
@@ -268,7 +238,14 @@ $resultatFinal = [];
 for ($i = 0; $i < 4; $i++) {
     $cal = round($totalCalories * $repartition[$i]);
     $forceRefresh = ($refreshIndex !== null && $refreshIndex === $i);
-    $resultatFinal[] = chercherRepas($types[$i], $cal, $apiKey, $diet, $i, $cacheDir, $quotaLockFile, $forceRefresh);
+    $recette = chercherRepas($types[$i], $cal, $apiKey, $diet, $i, $cacheDir, $quotaLockFile, $forceRefresh);
+
+    // V2 : Traduire (sauf fallback, déjà en français)
+    if (($recette['source'] ?? '') !== 'fallback') {
+        $recette = traduireRecette($recette);
+    }
+
+    $resultatFinal[] = $recette;
 }
 
 echo json_encode($resultatFinal);

@@ -31,6 +31,9 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('');
   const [menuSauvegarde, setMenuSauvegarde] = useState(false);
+  // ── FIX 1 : état pour le loading et les erreurs du bouton sauvegarder ──
+  const [sauvLoading, setSauvLoading] = useState(false);
+  const [sauvErreur, setSauvErreur] = useState('');
 
   // ─── Sauvegarde auto ───
   useEffect(() => {
@@ -89,30 +92,74 @@ function App() {
   ];
 
   // ─── Sauvegarder le menu du jour ───
+  // FIX 2 : ajout loading, feedback erreur, et compatibilité user.id / user.idutilisateurs
   const sauvegarderMenu = async () => {
     if (!user || recipes.length !== 4) return;
 
+    // FIX 3 : accepter user.id OU user.idutilisateurs (selon ce que auth.php renvoie)
+    const userId = user.id || user.idutilisateurs;
+    if (!userId) {
+      setSauvErreur("❌ Erreur : utilisateur non identifié. Reconnectez-vous.");
+      setTimeout(() => setSauvErreur(''), 4000);
+      return;
+    }
+
+    setSauvLoading(true);
+    setSauvErreur('');
+
     const { totalCal, totalProt } = calculerTotaux(recipes);
+
+    // FIX 8 : nettoyer les recettes — ne garder que l'essentiel
+    // Évite l'erreur "Data too long for column recettes_json"
+    // car Spoonacular renvoie des dizaines de nutriments par recette
+    const recettesLegeres = recipes.map(r => {
+      const nuts = r.nutrition?.nutrients || [];
+      return {
+        id: r.id,
+        title: r.title,
+        image: r.image,
+        sourceUrl: r.sourceUrl,
+        calories: Math.round(nuts.find(n => n.name === "Calories")?.amount || 0),
+        protein: Math.round(nuts.find(n => n.name === "Protein")?.amount || 0),
+        fat: Math.round(nuts.find(n => n.name === "Fat")?.amount || 0),
+        carbs: Math.round(nuts.find(n => n.name === "Carbohydrates")?.amount || 0),
+      };
+    });
 
     try {
       const response = await fetch(`${API_URL}/historique.php?action=sauvegarder`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          userId: user.id,
-          recettes: recipes,
+          userId: userId,
+          recettes: recettesLegeres,
           totalCalories: totalCal,
           totalProteines: totalProt,
           date: new Date().toISOString().split('T')[0]
         })
       });
+
+      // FIX 4 : vérifier que la réponse HTTP est ok
+      if (!response.ok) {
+        throw new Error(`Erreur serveur (${response.status})`);
+      }
+
       const data = await response.json();
+
       if (data.success) {
         setMenuSauvegarde(true);
         setTimeout(() => setMenuSauvegarde(false), 3000);
+      } else {
+        setSauvErreur(`❌ ${data.message || "Erreur lors de la sauvegarde"}`);
+        setTimeout(() => setSauvErreur(''), 4000);
       }
     } catch (error) {
       console.error("Erreur sauvegarde:", error);
+      // FIX 5 : afficher l'erreur à l'utilisateur au lieu de l'ignorer
+      setSauvErreur("❌ Impossible de sauvegarder. Vérifie ta connexion.");
+      setTimeout(() => setSauvErreur(''), 4000);
+    } finally {
+      setSauvLoading(false);
     }
   };
 
@@ -176,7 +223,7 @@ function App() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            userId: user.id,
+            userId: user.id || user.idutilisateurs,
             ...donnees,
             calories: nouveauxBesoins.calories
           })
@@ -244,19 +291,33 @@ function App() {
               onRefreshRecipe={remplacerUneRecette}
               onEditProfil={() => setPage("profil")}
             />
-            {/* Bouton sauvegarder */}
+            {/* ── FIX 6 : Bouton sauvegarder corrigé ── */}
             {user && (
               <div className="w-full max-w-md mx-auto px-4 mb-8">
                 <button
                   onClick={sauvegarderMenu}
-                  className={`w-full py-4 rounded-2xl font-bold text-lg transition-all ${
+                  disabled={sauvLoading}
+                  className={`w-full py-4 rounded-2xl font-bold text-lg transition-all duration-300 ${
                     menuSauvegarde
                       ? 'bg-green-500 text-white'
-                      : 'bg-linear-to-r from-amber-500 to-amber-600 text-white shadow-lg hover:-translate-y-1'
+                      : sauvLoading
+                        ? 'bg-amber-300 text-white cursor-not-allowed opacity-70'
+                        : 'bg-linear-to-r from-amber-500 to-amber-600 text-white shadow-lg hover:-translate-y-1 active:translate-y-0'
                   }`}
                 >
-                  {menuSauvegarde ? '✅ Menu sauvegardé !' : '💾 Sauvegarder mon menu du jour'}
+                  {menuSauvegarde
+                    ? '✅ Menu sauvegardé !'
+                    : sauvLoading
+                      ? '⏳ Sauvegarde en cours...'
+                      : '💾 Sauvegarder mon menu du jour'
+                  }
                 </button>
+                {/* FIX 7 : message d'erreur visible */}
+                {sauvErreur && (
+                  <p className="text-red-500 text-sm font-medium text-center mt-2 animate-pulse">
+                    {sauvErreur}
+                  </p>
+                )}
               </div>
             )}
           </div>
