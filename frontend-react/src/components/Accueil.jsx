@@ -1,5 +1,6 @@
 import React from 'react';
 import shaker from '../assets/shaker.png';
+import Footer from './Footer';
 
 function Accueil({ onCommencer }) {
   return (
@@ -8,12 +9,10 @@ function Accueil({ onCommencer }) {
       <header className="relative px-6 pt-16 pb-20 text-center bg-linear-to-b from-amber-50 via-white to-white">
         <div className="mx-auto max-w-4xl">
           
-          {/* Animation : Apparition douce et légère rotation */}
           <div className="mb-8 inline-block transform -rotate-6 rounded-3xl border border-amber-100 bg-white p-4 shadow-sm animate-in fade-in zoom-in duration-700">
             <img src={shaker} alt="Shaker" className="h-20 w-20" />
           </div>
 
-          {/* Animation : Glissement vers le haut avec un petit délai */}
           <h1 className="mb-6 text-4xl font-extrabold leading-tight tracking-tight text-gray-900 md:text-6xl animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-200">
             La nutrition <span className="text-orange-700/80">intelligente</span> <br /> pour ton corps.
           </h1>
@@ -31,11 +30,10 @@ function Accueil({ onCommencer }) {
         </div>
       </header>
 
-      {/* 2. Section des Avantages (Grille complète) */}
+      {/* 2. Section des Avantages */}
       <section className="px-6 pb-24 animate-in fade-in slide-in-from-bottom-8 duration-1000 delay-1000">
         <div className="mx-auto grid max-w-5xl grid-cols-1 gap-8 md:grid-cols-3">
           
-          {/* Carte 1 - Précision */}
           <div className="group rounded-3xl border border-gray-100 bg-amber-50/50 p-10 transition-all hover:-translate-y-2 hover:bg-white hover:shadow-2xl">
             <div className="mb-6 inline-block text-4xl transition-transform group-hover:scale-110">🎯</div>
             <h3 className="mb-3 text-xl font-bold text-gray-900">Précision</h3>
@@ -44,7 +42,6 @@ function Accueil({ onCommencer }) {
             </p>
           </div>
 
-          {/* Carte 2 - Variété */}
           <div className="group rounded-3xl border border-gray-100 bg-amber-50/50 p-10 transition-all hover:-translate-y-2 hover:bg-white hover:shadow-2xl">
             <div className="mb-6 inline-block text-4xl transition-transform group-hover:scale-110">🥗</div>
             <h3 className="mb-3 text-xl font-bold text-gray-900">Variété</h3>
@@ -53,7 +50,6 @@ function Accueil({ onCommencer }) {
             </p>
           </div>
 
-          {/* Carte 3 - Simplicité */}
           <div className="group rounded-3xl border border-gray-100 bg-amber-50/50 p-10 transition-all hover:-translate-y-2 hover:bg-white hover:shadow-2xl">
             <div className="mb-6 inline-block text-4xl transition-transform group-hover:scale-110">⚡</div>
             <h3 className="mb-3 text-xl font-bold text-gray-900">Simplicité</h3>
@@ -65,7 +61,7 @@ function Accueil({ onCommencer }) {
         </div>
       </section>
 
-      {/* Section : Comment ça marche */}
+      {/* 3. Section : Comment ça marche */}
       <section className="w-full bg-amber-50/30 py-20 px-6">
         <div className="mx-auto max-w-4xl">
           <h2 className="mb-12 text-center text-3xl font-bold text-gray-900">
@@ -73,7 +69,6 @@ function Accueil({ onCommencer }) {
           </h2>
 
           <div className="grid gap-12 md:grid-cols-3">
-            {/* Étape 1 */}
             <div className="flex flex-col items-center text-center md:items-start md:text-left md:flex-row md:gap-4">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-orange-500 text-xl font-bold text-white shadow-lg mb-4 md:mb-0">
                 1
@@ -84,7 +79,6 @@ function Accueil({ onCommencer }) {
               </div>
             </div>
 
-            {/* Étape 2 */}
             <div className="flex flex-col items-center text-center md:items-start md:text-left md:flex-row md:gap-4">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-orange-500 text-xl font-bold text-white shadow-lg mb-4 md:mb-0">
                 2
@@ -95,7 +89,6 @@ function Accueil({ onCommencer }) {
               </div>
             </div>
 
-            {/* Étape 3 */}
             <div className="flex flex-col items-center text-center md:items-start md:text-left md:flex-row md:gap-4">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-orange-500 text-xl font-bold text-white shadow-lg mb-4 md:mb-0">
                 3
@@ -108,6 +101,9 @@ function Accueil({ onCommencer }) {
           </div>
         </div>
       </section>
+
+      {/* 4. Footer avec liens légaux */}
+      <Footer />
     </div>
   );
 }
