@@ -158,7 +158,7 @@ function Footer() {
               </button>
             ))}
             <a
-              href="mailto:contact@foodquant.app"
+              href="mailto:foodquant.app@gmail.com"
               className="text-xs text-gray-400 hover:text-amber-600 transition-colors underline"
             >
               Contact
