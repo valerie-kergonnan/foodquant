@@ -1,11 +1,90 @@
 import { useState, useEffect } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Line } from 'recharts';
+
+// ─── V2 : Définition des badges ───
+const BADGES_CONFIG = [
+  {
+    id: 'premier_menu',
+    emoji: '🏆',
+    titre: 'Premier pas',
+    description: 'Premier menu sauvegardé',
+    condition: (stats) => stats.total_jours >= 1,
+  },
+  {
+    id: 'trois_jours',
+    emoji: '🌱',
+    titre: 'Bonne habitude',
+    description: '3 jours de suivi',
+    condition: (stats) => stats.total_jours >= 3,
+  },
+  {
+    id: 'streak_7',
+    emoji: '🔥',
+    titre: 'En feu !',
+    description: '7 jours consécutifs',
+    condition: (stats) => stats.streak >= 7,
+  },
+  {
+    id: 'streak_14',
+    emoji: '💎',
+    titre: 'Diamant',
+    description: '14 jours consécutifs',
+    condition: (stats) => stats.streak >= 14,
+  },
+  {
+    id: 'total_30',
+    emoji: '🌟',
+    titre: 'Un mois !',
+    description: '30 jours de suivi',
+    condition: (stats) => stats.total_jours >= 30,
+  },
+  {
+    id: 'calories_ok',
+    emoji: '💪',
+    titre: 'Bien calibré',
+    description: 'Moyenne calories dans l\'objectif',
+    condition: (stats, besoins) => {
+      if (!besoins?.calories || !stats.moy_calories) return false;
+      const ecart = Math.abs(stats.moy_calories - besoins.calories) / besoins.calories;
+      return ecart < 0.15 && stats.total_jours >= 3;
+    },
+  },
+  {
+    id: 'regulier',
+    emoji: '📅',
+    titre: 'Régulier',
+    description: '10 jours de suivi total',
+    condition: (stats) => stats.total_jours >= 10,
+  },
+  {
+    id: 'streak_30',
+    emoji: '👑',
+    titre: 'Roi du suivi',
+    description: '30 jours consécutifs',
+    condition: (stats) => stats.streak >= 30,
+  },
+];
+
+// ─── Composant Badge ───
+const Badge = ({ badge, debloque }) => (
+  <div className={`flex flex-col items-center p-3 rounded-2xl border transition-all ${
+    debloque
+      ? 'bg-white border-amber-200 shadow-sm'
+      : 'bg-gray-50 border-gray-100 opacity-40 grayscale'
+  }`}>
+    <span className="text-3xl mb-1">{badge.emoji}</span>
+    <p className="text-[10px] font-black text-gray-700 text-center leading-tight">{badge.titre}</p>
+    <p className="text-[9px] text-gray-400 text-center mt-0.5">{badge.description}</p>
+  </div>
+);
 
 function Dashboard({ user, besoins }) {
   const [historique, setHistorique] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [periode, setPeriode] = useState(7);
+  // V2 : Afficher/masquer les badges
+  const [showBadges, setShowBadges] = useState(true);
 
   const API_URL = 'https://foodquant-production.up.railway.app';
 
@@ -13,6 +92,7 @@ function Dashboard({ user, besoins }) {
     if (user?.id) {
       chargerDonnees();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, periode]);
 
   const chargerDonnees = async () => {
@@ -26,7 +106,6 @@ function Dashboard({ user, besoins }) {
       const statsData = await statsRes.json();
 
       if (histData.success) {
-        // Formater les dates pour le graphique
         const formatted = histData.historique.map(j => ({
           ...j,
           date: new Date(j.date_repas).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric' }),
@@ -39,12 +118,19 @@ function Dashboard({ user, besoins }) {
       if (statsData.success) {
         setStats(statsData.stats);
       }
-    } catch (error) {
-      console.error("Erreur chargement dashboard:", error);
+    } catch {
+      console.error("Erreur chargement dashboard");
     } finally {
       setLoading(false);
     }
   };
+
+  // V2 : Calculer les badges débloqués
+  const badgesDebloques = stats
+    ? BADGES_CONFIG.filter(b => b.condition(stats, besoins))
+    : [];
+  const nbDebloques = badgesDebloques.length;
+  const nbTotal = BADGES_CONFIG.length;
 
   if (loading) {
     return (
@@ -74,6 +160,55 @@ function Dashboard({ user, besoins }) {
             <p className="text-2xl font-black text-green-600">{stats.moy_calories}</p>
             <p className="text-[10px] font-bold text-green-800/50 uppercase">Moy. kcal</p>
           </div>
+        </div>
+      )}
+
+      {/* ─── V2 : Badges / Gamification ─── */}
+      {stats && (
+        <div className="mb-8 bg-white rounded-3xl border border-amber-100 shadow-sm overflow-hidden">
+          <button
+            onClick={() => setShowBadges(prev => !prev)}
+            className="w-full p-4 flex items-center justify-between hover:bg-amber-50/50 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-lg">🏅</span>
+              <span className="font-bold text-gray-700">Mes badges</span>
+              <span className="text-xs bg-amber-100 text-amber-700 font-bold px-2 py-0.5 rounded-full">
+                {nbDebloques}/{nbTotal}
+              </span>
+            </div>
+            <span className="text-gray-400 text-sm">
+              {showBadges ? '▲' : '▼'}
+            </span>
+          </button>
+
+          {showBadges && (
+            <div className="px-4 pb-4">
+              {/* Barre de progression globale */}
+              <div className="mb-4">
+                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-amber-400 rounded-full transition-all duration-1000"
+                    style={{ width: `${(nbDebloques / nbTotal) * 100}%` }}
+                  />
+                </div>
+                <p className="text-[10px] text-gray-400 mt-1 text-right">
+                  {nbDebloques === nbTotal ? '🎉 Tous les badges débloqués !' : `${nbTotal - nbDebloques} badge${nbTotal - nbDebloques > 1 ? 's' : ''} restant${nbTotal - nbDebloques > 1 ? 's' : ''}`}
+                </p>
+              </div>
+
+              {/* Grille de badges */}
+              <div className="grid grid-cols-4 gap-2">
+                {BADGES_CONFIG.map(badge => (
+                  <Badge
+                    key={badge.id}
+                    badge={badge}
+                    debloque={badgesDebloques.some(b => b.id === badge.id)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
