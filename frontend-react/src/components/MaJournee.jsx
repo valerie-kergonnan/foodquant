@@ -36,21 +36,53 @@ const AnneauProgression = ({ pourcentage, label, valeur, unite, taille = 100, co
   );
 };
 
+// ─── V2 : Barre de nutriment compacte ───
+const BarreNutriment = ({ label, valeur, unite, couleur = "bg-amber-400", max = 100 }) => {
+  const pourcentage = Math.min((valeur / max) * 100, 100);
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[10px] font-bold text-gray-500 uppercase w-14 text-right">{label}</span>
+      <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+        <div
+          className={`h-full ${couleur} rounded-full transition-all duration-1000 ease-out`}
+          style={{ width: `${pourcentage}%` }}
+        />
+      </div>
+      <span className="text-xs font-bold text-gray-700 w-12">{valeur}{unite}</span>
+    </div>
+  );
+};
+
 // ─── Composant principal ───
 function MaJournee({ recipes, nutrients, besoins, onRefreshRecipe, onEditProfil }) {
   const [refreshingIndex, setRefreshingIndex] = useState(null);
+  // V2 : état pour afficher/masquer le détail nutritionnel par repas
+  const [detailOuvert, setDetailOuvert] = useState({});
 
-  // Sécurité
+  // Sécurité + V2 : message guide amélioré
   if (!recipes || recipes.length === 0 || recipes.every(r => !r)) {
     return (
       <div className="w-full max-w-md px-4 mx-auto pb-20 flex flex-col items-center justify-center min-h-[60vh]">
-        <p className="text-gray-500 text-lg mb-4">Aucun repas trouvé</p>
-        <button
-          onClick={() => window.location.reload()}
-          className="bg-amber-500 text-white font-bold py-3 px-6 rounded-2xl"
-        >
-          🔄 Recharger mes repas
-        </button>
+        <div className="text-center">
+          <p className="text-5xl mb-4">🍽️</p>
+          <h2 className="text-xl font-black text-gray-700 mb-2">Aucun menu généré</h2>
+          <p className="text-gray-400 text-sm mb-6">Remplis ton profil pour découvrir ton menu personnalisé du jour !</p>
+          {onEditProfil ? (
+            <button
+              onClick={onEditProfil}
+              className="bg-amber-500 text-white font-bold py-3 px-8 rounded-2xl hover:-translate-y-1 transition-all"
+            >
+              ✏️ Remplir mon profil
+            </button>
+          ) : (
+            <button
+              onClick={() => window.location.reload()}
+              className="bg-amber-500 text-white font-bold py-3 px-6 rounded-2xl"
+            >
+              🔄 Recharger mes repas
+            </button>
+          )}
+        </div>
       </div>
     );
   }
@@ -67,6 +99,15 @@ function MaJournee({ recipes, nutrients, besoins, onRefreshRecipe, onEditProfil 
     await onRefreshRecipe(index);
     setRefreshingIndex(null);
   };
+
+  const toggleDetail = (index) => {
+    setDetailOuvert(prev => ({ ...prev, [index]: !prev[index] }));
+  };
+
+  // V2 : Calcul des totaux globaux (lipides, glucides, fibres)
+  const totalLipides = recipes.reduce((sum, r) => sum + obtenirValeur(r, "Fat"), 0);
+  const totalGlucides = recipes.reduce((sum, r) => sum + obtenirValeur(r, "Carbohydrates"), 0);
+  const totalFibres = recipes.reduce((sum, r) => sum + obtenirValeur(r, "Fiber"), 0);
 
   return (
     <div className="w-full max-w-md px-4 mx-auto pb-20">
@@ -86,7 +127,7 @@ function MaJournee({ recipes, nutrients, besoins, onRefreshRecipe, onEditProfil 
 
       {/* ─── Dashboard global ─── */}
       {besoins && (
-        <div className="mb-12 p-8 bg-white border border-amber-100 rounded-[3rem] shadow-xl flex justify-around items-center">
+        <div className="mb-6 p-8 bg-white border border-amber-100 rounded-[3rem] shadow-xl flex justify-around items-center">
           <AnneauProgression
             pourcentage={nutrients ? (nutrients.calories / besoins.calories) * 100 : 0}
             label="Total Calories"
@@ -99,6 +140,16 @@ function MaJournee({ recipes, nutrients, besoins, onRefreshRecipe, onEditProfil 
             valeur={nutrients ? Math.round(nutrients.protein) : 0}
             unite="g" taille={110} couleur="text-orange-500"
           />
+        </div>
+      )}
+
+      {/* ─── V2 : Récapitulatif nutritionnel détaillé ─── */}
+      {besoins && nutrients && (
+        <div className="mb-8 p-4 bg-white rounded-2xl border border-amber-100 shadow-sm space-y-2">
+          <p className="text-[10px] font-bold text-amber-800/50 uppercase tracking-wider mb-2">Récapitulatif nutritionnel</p>
+          <BarreNutriment label="Lipides" valeur={Math.round(totalLipides)} unite="g" couleur="bg-yellow-400" max={Math.round(besoins.calories * 0.30 / 9)} />
+          <BarreNutriment label="Glucides" valeur={Math.round(totalGlucides)} unite="g" couleur="bg-blue-400" max={Math.round(besoins.calories * 0.50 / 4)} />
+          <BarreNutriment label="Fibres" valeur={Math.round(totalFibres)} unite="g" couleur="bg-green-400" max={30} />
         </div>
       )}
 
@@ -124,12 +175,18 @@ function MaJournee({ recipes, nutrients, besoins, onRefreshRecipe, onEditProfil 
 
           const calPlat = obtenirValeur(repas.donnee, "Calories");
           const protPlat = obtenirValeur(repas.donnee, "Protein");
+          // V2 : Nutriments détaillés par repas
+          const lipPlat = obtenirValeur(repas.donnee, "Fat");
+          const glucPlat = obtenirValeur(repas.donnee, "Carbohydrates");
+          const fibrePlat = obtenirValeur(repas.donnee, "Fiber");
+
           const multiProt = [0.3, 0.35, 0.1, 0.25][index];
           const divCal = index === 0 ? 3 : (index === 2 ? 6 : 4);
           const objCal = besoins?.calories ? besoins.calories / divCal : 500;
           const objProt = besoins?.proteines ? besoins.proteines * multiProt : 30;
 
           const isRefreshing = refreshingIndex === index;
+          const showDetail = detailOuvert[index] || false;
 
           return (
             <div
@@ -146,7 +203,7 @@ function MaJournee({ recipes, nutrients, besoins, onRefreshRecipe, onEditProfil 
                 <div className="h-52 overflow-hidden relative">
                   <img
                     src={repas.donnee.image}
-                    alt={repas.donnee.title_fr}
+                    alt={repas.donnee.title_fr || repas.donnee.title}
                     className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                   />
                   {isRefreshing && (
@@ -157,12 +214,13 @@ function MaJournee({ recipes, nutrients, besoins, onRefreshRecipe, onEditProfil 
                 </div>
 
                 <div className="p-6">
+                  {/* V2 : title_fr avec fallback sur title */}
                   <h3 className="font-extrabold text-gray-800 text-xl leading-tight mb-4 group-hover:text-amber-600 transition-colors">
-                    {repas.donnee.title_fr}
+                    {repas.donnee.title_fr || repas.donnee.title}
                   </h3>
 
                   {/* Mini-anneaux par repas */}
-                  <div className="flex justify-around items-center bg-amber-50/50 p-4 rounded-3xl mb-6 border border-amber-100">
+                  <div className="flex justify-around items-center bg-amber-50/50 p-4 rounded-3xl mb-4 border border-amber-100">
                     <AnneauProgression
                       pourcentage={(calPlat / objCal) * 100}
                       valeur={Math.round(calPlat)}
@@ -176,6 +234,23 @@ function MaJournee({ recipes, nutrients, besoins, onRefreshRecipe, onEditProfil 
                       label="Protéines" taille={85} couleur="text-orange-500"
                     />
                   </div>
+
+                  {/* V2 : Bouton pour afficher le détail nutritionnel */}
+                  <button
+                    onClick={() => toggleDetail(index)}
+                    className="w-full text-center text-xs font-bold text-amber-600/60 hover:text-amber-600 mb-4 transition-colors"
+                  >
+                    {showDetail ? "▲ Masquer le détail" : "▼ Voir lipides, glucides, fibres"}
+                  </button>
+
+                  {/* V2 : Détail nutritionnel par repas */}
+                  {showDetail && (
+                    <div className="mb-4 p-3 bg-gray-50 rounded-2xl space-y-2 animate-fadeIn">
+                      <BarreNutriment label="Lipides" valeur={Math.round(lipPlat)} unite="g" couleur="bg-yellow-400" max={30} />
+                      <BarreNutriment label="Glucides" valeur={Math.round(glucPlat)} unite="g" couleur="bg-blue-400" max={80} />
+                      <BarreNutriment label="Fibres" valeur={Math.round(fibrePlat)} unite="g" couleur="bg-green-400" max={10} />
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-2 gap-3">
                     <a
@@ -208,14 +283,15 @@ function MaJournee({ recipes, nutrients, besoins, onRefreshRecipe, onEditProfil 
       {/* ─── Animation CSS ─── */}
       <style>{`
         @keyframes fadeSlideUp {
-          from {
-            opacity: 0;
-            transform: translateY(20px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(-5px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fadeIn {
+          animation: fadeIn 0.3s ease-out;
         }
       `}</style>
     </div>
