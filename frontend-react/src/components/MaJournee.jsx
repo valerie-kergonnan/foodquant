@@ -7,7 +7,7 @@ const obtenirValeur = (recette, nomCible) => {
   return nutriment ? nutriment.amount : 0;
 };
 
-// ─── Anneau de progression animé (utilisé uniquement par repas) ───
+// ─── Anneau de progression animé (par repas) ───
 const AnneauProgression = ({ pourcentage, label, valeur, unite, taille = 100, couleur = "text-amber-600" }) => {
   const rayon = 40;
   const perimetre = 2 * Math.PI * rayon;
@@ -59,10 +59,179 @@ const BarreNutriment = ({ label, valeur, objectif, unite, couleur = "bg-amber-40
   );
 };
 
+// ─── V2 : Modale Liste de Courses ───
+const ModalListeCourses = ({ recipes, onClose }) => {
+  // Extraire tous les ingrédients de toutes les recettes
+  const tousIngredients = [];
+  const repasLabels = ["Petit-déjeuner", "Déjeuner", "Collation", "Dîner"];
+
+  recipes.forEach((recette, index) => {
+    if (!recette) return;
+
+    // Priorité : ingredients_fr (traduits), sinon extendedIngredients, sinon nutrition.ingredients
+    let ingredients = [];
+
+    if (recette.ingredients_fr && recette.ingredients_fr.length > 0) {
+      ingredients = recette.ingredients_fr;
+    } else if (recette.extendedIngredients) {
+      ingredients = recette.extendedIngredients.map(ing => ing.original || ing.name || '');
+    } else if (recette.nutrition?.ingredients) {
+      ingredients = recette.nutrition.ingredients.map(ing => {
+        const amount = ing.amount ? `${Math.round(ing.amount * 10) / 10}` : '';
+        const unit = ing.unit || '';
+        const name = ing.name || '';
+        return `${amount} ${unit} ${name}`.trim();
+      });
+    }
+
+    ingredients.forEach(ing => {
+      if (ing && ing.trim()) {
+        tousIngredients.push({
+          texte: ing.trim(),
+          repas: repasLabels[index],
+          id: `${index}-${ing.trim()}`
+        });
+      }
+    });
+  });
+
+  // Dédupliquer par texte (en minuscule)
+  const ingredientsUniques = [];
+  const vus = new Set();
+  tousIngredients.forEach(ing => {
+    const cle = ing.texte.toLowerCase();
+    if (!vus.has(cle)) {
+      vus.add(cle);
+      ingredientsUniques.push(ing);
+    }
+  });
+
+  const [coches, setCoches] = useState({});
+  const [copie, setCopie] = useState(false);
+
+  const toggleCoche = (id) => {
+    setCoches(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const copierListe = () => {
+    const texte = ingredientsUniques
+      .map(ing => `${coches[ing.id] ? '✅' : '⬜'} ${ing.texte}`)
+      .join('\n');
+    navigator.clipboard.writeText(texte).then(() => {
+      setCopie(true);
+      setTimeout(() => setCopie(false), 2000);
+    });
+  };
+
+  const nbCoches = Object.values(coches).filter(Boolean).length;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+      {/* Overlay */}
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+
+      {/* Modale */}
+      <div className="relative bg-white w-full max-w-md max-h-[85vh] rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col animate-slideUp">
+        {/* Header */}
+        <div className="p-5 border-b border-gray-100 flex items-center justify-between shrink-0">
+          <div>
+            <h2 className="text-xl font-black text-gray-800">🛒 Liste de courses</h2>
+            <p className="text-xs text-gray-400 mt-1">
+              {ingredientsUniques.length} ingrédient{ingredientsUniques.length > 1 ? 's' : ''}
+              {nbCoches > 0 && ` · ${nbCoches} coché${nbCoches > 1 ? 's' : ''}`}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-10 h-10 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 transition-colors"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Liste des ingrédients */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-2">
+          {ingredientsUniques.length === 0 ? (
+            <div className="text-center py-8">
+              <p className="text-3xl mb-3">📝</p>
+              <p className="text-gray-400 text-sm">Aucun ingrédient disponible.</p>
+              <p className="text-gray-300 text-xs mt-1">Les ingrédients apparaîtront après génération d'un nouveau menu.</p>
+            </div>
+          ) : (
+            ingredientsUniques.map((ing) => (
+              <button
+                key={ing.id}
+                onClick={() => toggleCoche(ing.id)}
+                className={`w-full flex items-center gap-3 p-3 rounded-2xl text-left transition-all duration-200 ${
+                  coches[ing.id]
+                    ? 'bg-green-50 border border-green-200'
+                    : 'bg-gray-50 border border-transparent hover:bg-amber-50'
+                }`}
+              >
+                <span className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
+                  coches[ing.id]
+                    ? 'bg-green-500 border-green-500 text-white'
+                    : 'border-gray-300'
+                }`}>
+                  {coches[ing.id] && <span className="text-xs">✓</span>}
+                </span>
+                <span className={`text-sm flex-1 transition-all ${
+                  coches[ing.id]
+                    ? 'text-gray-400 line-through'
+                    : 'text-gray-700 font-medium'
+                }`}>
+                  {ing.texte}
+                </span>
+                <span className="text-[10px] text-gray-300 font-medium shrink-0">
+                  {ing.repas}
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+
+        {/* Footer actions */}
+        {ingredientsUniques.length > 0 && (
+          <div className="p-5 border-t border-gray-100 flex gap-3 shrink-0">
+            <button
+              onClick={copierListe}
+              className={`flex-1 py-3 rounded-2xl font-bold text-sm transition-all ${
+                copie
+                  ? 'bg-green-500 text-white'
+                  : 'bg-amber-500 hover:bg-amber-600 text-white'
+              }`}
+            >
+              {copie ? '✅ Copié !' : '📋 Copier la liste'}
+            </button>
+            <button
+              onClick={() => setCoches({})}
+              className="px-4 py-3 rounded-2xl font-bold text-sm bg-gray-100 hover:bg-gray-200 text-gray-600 transition-all"
+            >
+              ↩️
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Animation */}
+      <style>{`
+        @keyframes slideUp {
+          from { opacity: 0; transform: translateY(100px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-slideUp {
+          animation: slideUp 0.3s ease-out;
+        }
+      `}</style>
+    </div>
+  );
+};
+
 // ─── Composant principal ───
 function MaJournee({ recipes, nutrients, besoins, onRefreshRecipe, onEditProfil }) {
   const [refreshingIndex, setRefreshingIndex] = useState(null);
   const [detailOuvert, setDetailOuvert] = useState({});
+  const [showListeCourses, setShowListeCourses] = useState(false);
 
   // Sécurité + message guide
   if (!recipes || recipes.length === 0 || recipes.every(r => !r)) {
@@ -129,14 +298,23 @@ function MaJournee({ recipes, nutrients, besoins, onRefreshRecipe, onEditProfil 
       {/* ─── Header ─── */}
       <div className="flex items-center justify-between pt-6 mb-6">
         <h1 className="text-3xl font-black text-gray-800">Ma Journée</h1>
-        {onEditProfil && (
+        <div className="flex gap-2">
+          {/* V2 : Bouton liste de courses */}
           <button
-            onClick={onEditProfil}
-            className="text-sm bg-amber-50 text-amber-700 font-bold px-4 py-2 rounded-2xl border border-amber-200 hover:bg-amber-100 transition-all"
+            onClick={() => setShowListeCourses(true)}
+            className="text-sm bg-green-50 text-green-700 font-bold px-4 py-2 rounded-2xl border border-green-200 hover:bg-green-100 transition-all"
           >
-            ✏️ Profil
+            🛒
           </button>
-        )}
+          {onEditProfil && (
+            <button
+              onClick={onEditProfil}
+              className="text-sm bg-amber-50 text-amber-700 font-bold px-4 py-2 rounded-2xl border border-amber-200 hover:bg-amber-100 transition-all"
+            >
+              ✏️ Profil
+            </button>
+          )}
+        </div>
       </div>
 
       {/* ─── Dashboard compact unifié ─── */}
@@ -259,6 +437,14 @@ function MaJournee({ recipes, nutrients, besoins, onRefreshRecipe, onEditProfil 
           );
         })}
       </div>
+
+      {/* ─── V2 : Modale liste de courses ─── */}
+      {showListeCourses && (
+        <ModalListeCourses
+          recipes={recipes}
+          onClose={() => setShowListeCourses(false)}
+        />
+      )}
 
       {/* ─── Animations CSS ─── */}
       <style>{`
