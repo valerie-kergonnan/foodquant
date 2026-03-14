@@ -1,20 +1,36 @@
 <?php
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: POST, GET, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type");
+header("Access-Control-Allow-Headers: Content-Type, Authorization");
 header("Content-Type: application/json");
 if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') exit;
 
 require_once 'db.php';
+require_once 'jwt.php';
 
 $action = $_REQUEST['action'] ?? '';
+
+/**
+ * Récupérer le userId depuis le JWT ou le paramètre (rétrocompatibilité)
+ */
+function getUserId($data = null): int {
+    $token = extraireJWT();
+    if ($token) {
+        $payload = verifierJWT($token);
+        if ($payload && isset($payload['userId'])) {
+            return (int) $payload['userId'];
+        }
+    }
+    $userId = (int)(($data['userId'] ?? $_REQUEST['userId']) ?? 0);
+    return $userId;
+}
 
 // ─── SAUVEGARDER LE MENU DU JOUR ───
 if ($action === 'sauvegarder') {
     $json = file_get_contents('php://input');
     $data = json_decode($json, true);
 
-    $userId = (int)($data['userId'] ?? 0);
+    $userId = getUserId($data);
     $recettes = $data['recettes'] ?? [];
     $totalCalories = (int)($data['totalCalories'] ?? 0);
     $totalProteines = (int)($data['totalProteines'] ?? 0);
@@ -25,8 +41,15 @@ if ($action === 'sauvegarder') {
         exit;
     }
 
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateRepas)) {
+        echo json_encode(["success" => false, "message" => "Format de date invalide."]);
+        exit;
+    }
+
+    $totalCalories = max(0, min($totalCalories, 10000));
+    $totalProteines = max(0, min($totalProteines, 1000));
+
     try {
-        // INSERT ou UPDATE si la date existe déjà
         $stmt = $pdo->prepare("
             INSERT INTO historique_repas (utilisateur_id, date_repas, recettes_json, total_calories, total_proteines)
             VALUES (?, ?, ?, ?, ?)
@@ -45,14 +68,15 @@ if ($action === 'sauvegarder') {
 
         echo json_encode(["success" => true, "message" => "Menu sauvegardé !"]);
     } catch (PDOException $e) {
-        echo json_encode(["success" => false, "message" => "Erreur : " . $e->getMessage()]);
+        echo json_encode(["success" => false, "message" => "Erreur lors de la sauvegarde."]);
     }
 }
 
-// ─── RÉCUPÉRER L'HISTORIQUE (7 derniers jours) ───
+// ─── RÉCUPÉRER L'HISTORIQUE ───
 elseif ($action === 'historique') {
-    $userId = (int)($_REQUEST['userId'] ?? 0);
+    $userId = getUserId();
     $jours = (int)($_REQUEST['jours'] ?? 7);
+    $jours = max(1, min($jours, 365));
 
     if ($userId === 0) {
         echo json_encode(["success" => false, "message" => "Utilisateur non identifié."]);
@@ -70,24 +94,20 @@ elseif ($action === 'historique') {
         $stmt->execute([$userId, $jours]);
         $historique = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        // Décoder le JSON des recettes
         foreach ($historique as &$jour) {
             $jour['recettes'] = json_decode($jour['recettes_json'], true);
             unset($jour['recettes_json']);
         }
 
-        echo json_encode([
-            "success" => true,
-            "historique" => $historique
-        ]);
+        echo json_encode(["success" => true, "historique" => $historique]);
     } catch (PDOException $e) {
-        echo json_encode(["success" => false, "message" => "Erreur : " . $e->getMessage()]);
+        echo json_encode(["success" => false, "message" => "Erreur de récupération."]);
     }
 }
 
 // ─── STATS GLOBALES ───
 elseif ($action === 'stats') {
-    $userId = (int)($_REQUEST['userId'] ?? 0);
+    $userId = getUserId();
 
     if ($userId === 0) {
         echo json_encode(["success" => false, "message" => "Utilisateur non identifié."]);
@@ -95,12 +115,10 @@ elseif ($action === 'stats') {
     }
 
     try {
-        // Nombre total de jours suivis
         $stmt = $pdo->prepare("SELECT COUNT(*) as total_jours FROM historique_repas WHERE utilisateur_id = ?");
         $stmt->execute([$userId]);
-        $totalJours = $stmt->fetch(PDO::FETCH_ASSOC)['total_jours'];
+        $totalJours = $stmt->fetch()['total_jours'];
 
-        // Moyenne calories/protéines sur 7 jours
         $stmt = $pdo->prepare("
             SELECT 
                 ROUND(AVG(total_calories)) as moy_calories,
@@ -110,9 +128,8 @@ elseif ($action === 'stats') {
             AND date_repas >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
         ");
         $stmt->execute([$userId]);
-        $moyennes = $stmt->fetch(PDO::FETCH_ASSOC);
+        $moyennes = $stmt->fetch();
 
-        // Jours consécutifs (streak)
         $stmt = $pdo->prepare("
             SELECT date_repas FROM historique_repas 
             WHERE utilisateur_id = ? 
@@ -143,7 +160,7 @@ elseif ($action === 'stats') {
             ]
         ]);
     } catch (PDOException $e) {
-        echo json_encode(["success" => false, "message" => "Erreur : " . $e->getMessage()]);
+        echo json_encode(["success" => false, "message" => "Erreur de calcul des stats."]);
     }
 }
 

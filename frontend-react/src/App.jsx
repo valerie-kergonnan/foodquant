@@ -8,21 +8,28 @@ import Dashboard from './components/Dashboard';
 
 const API_URL = 'https://foodquant-production.up.railway.app';
 
+// V2 Sécurité : Helper pour les requêtes authentifiées
+const authHeaders = () => {
+  const token = localStorage.getItem('jwt_token');
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+};
+
 function App() {
-  // ─── Helpers ───
   const getSaved = (key, defaultValue) => {
     const saved = localStorage.getItem(key);
     if (!saved) return defaultValue;
     try {
       return JSON.parse(saved);
-    } catch (error) {
-      console.error(`Erreur de lecture pour ${key}:`, error);
+    } catch {
       localStorage.removeItem(key);
       return defaultValue;
     }
   };
 
-  // ─── State ───
   const [user, setUser] = useState(() => getSaved('user', null));
   const [recipes, setRecipes] = useState(() => getSaved('recipes', []));
   const [nutrimentsJour, setNutrimentsJour] = useState(() => getSaved('nutrimentsJour', null));
@@ -33,10 +40,8 @@ function App() {
   const [menuSauvegarde, setMenuSauvegarde] = useState(false);
   const [sauvLoading, setSauvLoading] = useState(false);
   const [sauvErreur, setSauvErreur] = useState('');
-  // V2 : Message de bienvenue
   const [toast, setToast] = useState(null);
 
-  // ─── Sauvegarde auto ───
   useEffect(() => {
     localStorage.setItem('besoins', JSON.stringify(besoins));
     localStorage.setItem('currentPage', JSON.stringify(page));
@@ -54,8 +59,6 @@ function App() {
     }
   }, [nutrimentsJour]);
 
-  // ─── Auth ───
-  // V2 : handleLogin reçoit le mode pour le message de bienvenue
   const handleLogin = (userData, mode) => {
     setUser(userData);
     localStorage.setItem('user', JSON.stringify(userData));
@@ -67,13 +70,14 @@ function App() {
       setToast({ emoji: '👋', message: `Content de te revoir ${prenom} !` });
     }
     setTimeout(() => setToast(null), 4000);
-
     setPage('profil');
   };
 
   const handleLogout = () => {
     setUser(null);
     localStorage.removeItem('user');
+    // V2 Sécurité : Supprimer le JWT à la déconnexion
+    localStorage.removeItem('jwt_token');
     setRecipes([]);
     setNutrimentsJour(null);
     localStorage.removeItem('recipes');
@@ -81,7 +85,6 @@ function App() {
     setPage('accueil');
   };
 
-  // ─── Calcul des totaux ───
   const calculerTotaux = (listeRecettes) => {
     let totalCal = 0;
     let totalProt = 0;
@@ -93,7 +96,6 @@ function App() {
     return { totalCal: Math.round(totalCal), totalProt: Math.round(totalProt) };
   };
 
-  // ─── Messages de chargement ───
   const messagesChargement = [
     "🍳 Préparation du petit-déjeuner...",
     "🥗 Sélection de recettes fraîches...",
@@ -102,7 +104,7 @@ function App() {
     "✨ Finalisation de ton menu..."
   ];
 
-  // ─── Sauvegarder le menu du jour ───
+  // ─── Sauvegarder le menu du jour (avec JWT) ───
   const sauvegarderMenu = async () => {
     if (!user || recipes.length !== 4) return;
 
@@ -136,7 +138,7 @@ function App() {
     try {
       const response = await fetch(`${API_URL}/historique.php?action=sauvegarder`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders(),
         body: JSON.stringify({
           userId: userId,
           recettes: recettesLegeres,
@@ -146,9 +148,7 @@ function App() {
         })
       });
 
-      if (!response.ok) {
-        throw new Error(`Erreur serveur (${response.status})`);
-      }
+      if (!response.ok) throw new Error(`Erreur serveur (${response.status})`);
 
       const data = await response.json();
 
@@ -159,8 +159,7 @@ function App() {
         setSauvErreur(`❌ ${data.message || "Erreur lors de la sauvegarde"}`);
         setTimeout(() => setSauvErreur(''), 4000);
       }
-    } catch (error) {
-      console.error("Erreur sauvegarde:", error);
+    } catch {
       setSauvErreur("❌ Impossible de sauvegarder. Vérifie ta connexion.");
       setTimeout(() => setSauvErreur(''), 4000);
     } finally {
@@ -187,8 +186,8 @@ function App() {
         setNutrimentsJour({ calories: totalCal, protein: totalProt });
         setMenuSauvegarde(false);
       }
-    } catch (error) {
-      console.error("Erreur lors du remplacement :", error);
+    } catch {
+      console.error("Erreur lors du remplacement");
     } finally {
       setLoading(false);
     }
@@ -221,19 +220,20 @@ function App() {
     };
     setBesoins(nouveauxBesoins);
 
+    // Mise à jour profil (avec JWT)
     if (user) {
       try {
         await fetch(`${API_URL}/auth.php?action=updateProfil`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders(),
           body: JSON.stringify({
             userId: user.id || user.idutilisateurs,
             ...donnees,
             calories: nouveauxBesoins.calories
           })
         });
-      } catch (e) {
-        console.error("Erreur update profil:", e);
+      } catch {
+        console.error("Erreur update profil");
       }
     }
 
@@ -248,8 +248,7 @@ function App() {
       const { totalCal, totalProt } = calculerTotaux(data);
       setNutrimentsJour({ calories: totalCal, protein: totalProt });
       setPage("majournee");
-    } catch (error) {
-      console.error("Erreur :", error);
+    } catch {
       alert("Impossible de récupérer les recettes. Vérifie ta connexion.");
     } finally {
       clearInterval(interval);
@@ -257,7 +256,6 @@ function App() {
     }
   };
 
-  // ─── Écran de chargement ───
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-linear-to-b from-amber-50 to-white">
@@ -273,11 +271,9 @@ function App() {
     );
   }
 
-  // ─── Rendu principal ───
   return (
     <div className="flex flex-col items-center min-h-screen p-6 pb-24 font-sans text-gray-800">
       
-      {/* V2 : Toast de bienvenue */}
       {toast && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 animate-toastIn">
           <div className="bg-white border border-amber-200 shadow-xl rounded-2xl px-6 py-4 flex items-center gap-3 max-w-sm">
@@ -292,18 +288,12 @@ function App() {
           from { opacity: 0; transform: translate(-50%, -20px); }
           to { opacity: 1; transform: translate(-50%, 0); }
         }
-        .animate-toastIn {
-          animation: toastIn 0.4s ease-out;
-        }
+        .animate-toastIn { animation: toastIn 0.4s ease-out; }
       `}</style>
 
       {page === "accueil" && <Accueil onCommencer={() => setPage(user ? "profil" : "login")} />}
-
       {page === "login" && <Login onLogin={handleLogin} />}
-
-      {page === "profil" && (
-        <Profil onResultats={chercherRecettes} />
-      )}
+      {page === "profil" && <Profil onResultats={chercherRecettes} />}
 
       {page === "majournee" && (
         recipes.length === 4 ? (
@@ -328,17 +318,10 @@ function App() {
                         : 'bg-linear-to-r from-amber-500 to-amber-600 text-white shadow-lg hover:-translate-y-1 active:translate-y-0'
                   }`}
                 >
-                  {menuSauvegarde
-                    ? '✅ Menu sauvegardé !'
-                    : sauvLoading
-                      ? '⏳ Sauvegarde en cours...'
-                      : '💾 Sauvegarder mon menu du jour'
-                  }
+                  {menuSauvegarde ? '✅ Menu sauvegardé !' : sauvLoading ? '⏳ Sauvegarde en cours...' : '💾 Sauvegarder mon menu du jour'}
                 </button>
                 {sauvErreur && (
-                  <p className="text-red-500 text-sm font-medium text-center mt-2 animate-pulse">
-                    {sauvErreur}
-                  </p>
+                  <p className="text-red-500 text-sm font-medium text-center mt-2 animate-pulse">{sauvErreur}</p>
                 )}
               </div>
             )}
@@ -346,10 +329,7 @@ function App() {
         ) : (
           <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
             <p className="text-gray-500 text-lg">Aucun repas généré</p>
-            <button
-              onClick={() => setPage("profil")}
-              className="bg-amber-500 text-white font-bold py-3 px-6 rounded-2xl hover:-translate-y-1 transition-all"
-            >
+            <button onClick={() => setPage("profil")} className="bg-amber-500 text-white font-bold py-3 px-6 rounded-2xl hover:-translate-y-1 transition-all">
               ✏️ Remplir mon profil
             </button>
           </div>
@@ -362,22 +342,14 @@ function App() {
         ) : (
           <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
             <p className="text-gray-500 text-lg">Connecte-toi pour voir tes stats</p>
-            <button
-              onClick={() => setPage("login")}
-              className="bg-amber-500 text-white font-bold py-3 px-6 rounded-2xl"
-            >
+            <button onClick={() => setPage("login")} className="bg-amber-500 text-white font-bold py-3 px-6 rounded-2xl">
               🔑 Se connecter
             </button>
           </div>
         )
       )}
 
-      <NavBar 
-        pageActive={page} 
-        onChangePage={setPage} 
-        isLoggedIn={!!user} 
-        onLogout={handleLogout}
-      />
+      <NavBar pageActive={page} onChangePage={setPage} isLoggedIn={!!user} onLogout={handleLogout} />
     </div>
   );
 }

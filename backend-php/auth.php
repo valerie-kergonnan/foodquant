@@ -1,12 +1,12 @@
 <?php
-session_start();
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: POST, GET, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type");
+header("Access-Control-Allow-Headers: Content-Type, Authorization");
 header("Content-Type: application/json");
 if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') exit;
 
 require_once 'db.php';
+require_once 'jwt.php';
 
 $action = $_REQUEST['action'] ?? '';
 
@@ -19,8 +19,19 @@ if ($action === 'inscription') {
     $email = trim($data['email'] ?? '');
     $mdp = $data['mot_de_passe'] ?? '';
 
+    // Validation des entrées
     if (empty($prenom) || empty($email) || empty($mdp)) {
         echo json_encode(["success" => false, "message" => "Tous les champs sont requis."]);
+        exit;
+    }
+
+    if (strlen($prenom) > 100) {
+        echo json_encode(["success" => false, "message" => "Le prénom est trop long."]);
+        exit;
+    }
+
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        echo json_encode(["success" => false, "message" => "Email invalide."]);
         exit;
     }
 
@@ -37,25 +48,32 @@ if ($action === 'inscription') {
         exit;
     }
 
-    // Hasher le mot de passe
     $mdpHash = password_hash($mdp, PASSWORD_DEFAULT);
 
     try {
         $stmt = $pdo->prepare("INSERT INTO utilisateurs (prenom, email, mot_de_passe) VALUES (?, ?, ?)");
         $stmt->execute([$prenom, $email, $mdpHash]);
-        $userId = $pdo->lastInsertId();
+        $userId = (int) $pdo->lastInsertId();
+
+        // Générer le JWT
+        $token = genererJWT([
+            'userId' => $userId,
+            'email' => $email,
+            'prenom' => $prenom
+        ]);
 
         echo json_encode([
             "success" => true,
             "message" => "Inscription réussie !",
+            "token" => $token,
             "user" => [
-                "id" => (int)$userId,
+                "id" => $userId,
                 "prenom" => $prenom,
                 "email" => $email
             ]
         ]);
     } catch (PDOException $e) {
-        echo json_encode(["success" => false, "message" => "Erreur : " . $e->getMessage()]);
+        echo json_encode(["success" => false, "message" => "Erreur lors de l'inscription."]);
     }
 }
 
@@ -81,9 +99,17 @@ elseif ($action === 'connexion') {
         exit;
     }
 
+    // Générer le JWT
+    $token = genererJWT([
+        'userId' => (int) $user['idutilisateurs'],
+        'email' => $user['email'],
+        'prenom' => $user['prenom']
+    ]);
+
     echo json_encode([
         "success" => true,
         "message" => "Connexion réussie !",
+        "token" => $token,
         "user" => [
             "id" => (int)$user['idutilisateurs'],
             "prenom" => $user['prenom'],
@@ -99,32 +125,53 @@ elseif ($action === 'connexion') {
     ]);
 }
 
-// ─── MISE À JOUR PROFIL ───
+// ─── MISE À JOUR PROFIL (protégé par JWT) ───
 elseif ($action === 'updateProfil') {
     $json = file_get_contents('php://input');
     $data = json_decode($json, true);
 
-    $userId = (int)($data['userId'] ?? 0);
+    // Vérifier le JWT si présent, sinon fallback sur userId (rétrocompatibilité)
+    $token = extraireJWT();
+    if ($token) {
+        $payload = verifierJWT($token);
+        $userId = $payload ? (int) $payload['userId'] : 0;
+    } else {
+        $userId = (int)($data['userId'] ?? 0);
+    }
+
     if ($userId === 0) {
         echo json_encode(["success" => false, "message" => "Utilisateur non identifié."]);
         exit;
     }
 
+    // Validation des données
+    $age = (int)($data['age'] ?? 0);
+    $weight = (float)($data['weight'] ?? 0);
+    $height = (float)($data['height'] ?? 0);
+    $gender = $data['gender'] ?? '';
+    $goal = $data['goal'] ?? '';
+    $diet = $data['diet'] ?? '';
+    $calories = (int)($data['calories'] ?? 0);
+
+    if ($age < 10 || $age > 120) {
+        echo json_encode(["success" => false, "message" => "Âge invalide."]);
+        exit;
+    }
+    if ($weight < 20 || $weight > 500) {
+        echo json_encode(["success" => false, "message" => "Poids invalide."]);
+        exit;
+    }
+    if ($height < 80 || $height > 280) {
+        echo json_encode(["success" => false, "message" => "Taille invalide."]);
+        exit;
+    }
+
     try {
         $stmt = $pdo->prepare("UPDATE utilisateurs SET age=?, weight=?, height=?, gender=?, goal=?, diet=?, besoin_calorique=? WHERE idutilisateurs=?");
-        $stmt->execute([
-            (int)$data['age'],
-            (float)$data['weight'],
-            (float)$data['height'],
-            $data['gender'],
-            $data['goal'],
-            $data['diet'] ?? '',
-            (int)($data['calories'] ?? 0),
-            $userId
-        ]);
+        $stmt->execute([$age, $weight, $height, $gender, $goal, $diet, $calories, $userId]);
         echo json_encode(["success" => true, "message" => "Profil mis à jour."]);
     } catch (PDOException $e) {
-        echo json_encode(["success" => false, "message" => "Erreur : " . $e->getMessage()]);
+        echo json_encode(["success" => false, "message" => "Erreur lors de la mise à jour."]);
     }
 }
 

@@ -27,13 +27,16 @@ function Login({ onLogin }) {
       const data = await response.json();
 
       if (data.success) {
+        // V2 : Stocker le token JWT
+        if (data.token) {
+          localStorage.setItem('jwt_token', data.token);
+        }
         localStorage.setItem('user', JSON.stringify(data.user));
-        // V2 : on transmet aussi le mode pour le message de bienvenue
         onLogin(data.user, mode);
       } else {
         setErreur(data.message);
       }
-    } catch  {
+    } catch {
       setErreur("Erreur de connexion au serveur.");
     } finally {
       setLoading(false);
@@ -44,7 +47,6 @@ function Login({ onLogin }) {
     <div className="w-full min-h-screen bg-white pt-10 pb-24 px-4">
       <div className="mx-auto max-w-sm space-y-6 bg-amber-50/40 p-8 rounded-3xl border border-amber-100 shadow-sm">
         
-        {/* Titre */}
         <div className="text-center mb-6">
           <h2 className="text-2xl font-bold text-amber-900/80">
             {mode === 'connexion' ? 'Connexion' : 'Inscription'}
@@ -52,14 +54,12 @@ function Login({ onLogin }) {
           <div className="h-1 w-12 bg-amber-200 mx-auto mt-2 rounded-full"></div>
         </div>
 
-        {/* Erreur */}
         {erreur && (
           <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-2xl text-sm text-center">
             {erreur}
           </div>
         )}
 
-        {/* Formulaire */}
         <div className="space-y-4">
           {mode === 'inscription' && (
             <div className="flex flex-col">
@@ -100,7 +100,6 @@ function Login({ onLogin }) {
           </div>
         </div>
 
-        {/* Bouton Submit */}
         <button
           onClick={handleSubmit}
           disabled={loading}
@@ -109,7 +108,6 @@ function Login({ onLogin }) {
           {loading ? '⏳ Chargement...' : (mode === 'connexion' ? '🔑 Se connecter' : '✨ Créer mon compte')}
         </button>
 
-        {/* Switch mode */}
         <p className="text-center text-sm text-gray-500">
           {mode === 'connexion' ? "Pas encore de compte ?" : "Déjà un compte ?"}
           <button
