@@ -7,7 +7,7 @@ const obtenirValeur = (recette, nomCible) => {
   return nutriment ? nutriment.amount : 0;
 };
 
-// ─── Anneau de progression animé ───
+// ─── Anneau de progression animé (utilisé uniquement par repas) ───
 const AnneauProgression = ({ pourcentage, label, valeur, unite, taille = 100, couleur = "text-amber-600" }) => {
   const rayon = 40;
   const perimetre = 2 * Math.PI * rayon;
@@ -36,19 +36,25 @@ const AnneauProgression = ({ pourcentage, label, valeur, unite, taille = 100, co
   );
 };
 
-// ─── V2 : Barre de nutriment compacte ───
-const BarreNutriment = ({ label, valeur, unite, couleur = "bg-amber-400", max = 100 }) => {
-  const pourcentage = Math.min((valeur / max) * 100, 100);
+// ─── Barre de progression avec label ───
+const BarreNutriment = ({ label, valeur, objectif, unite, couleur = "bg-amber-400", emoji = "" }) => {
+  const pourcentage = objectif > 0 ? Math.min((valeur / objectif) * 100, 100) : 0;
+  const depassement = objectif > 0 && valeur > objectif;
+
   return (
-    <div className="flex items-center gap-2">
-      <span className="text-[10px] font-bold text-gray-500 uppercase w-14 text-right">{label}</span>
-      <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+    <div className="space-y-1">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-bold text-gray-600">{emoji} {label}</span>
+        <span className="text-xs font-bold text-gray-800">
+          {valeur} <span className="text-gray-400 font-medium">/ {objectif} {unite}</span>
+        </span>
+      </div>
+      <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
         <div
-          className={`h-full ${couleur} rounded-full transition-all duration-1000 ease-out`}
+          className={`h-full ${depassement ? 'bg-red-400' : couleur} rounded-full transition-all duration-1000 ease-out`}
           style={{ width: `${pourcentage}%` }}
         />
       </div>
-      <span className="text-xs font-bold text-gray-700 w-12">{valeur}{unite}</span>
     </div>
   );
 };
@@ -56,10 +62,9 @@ const BarreNutriment = ({ label, valeur, unite, couleur = "bg-amber-400", max = 
 // ─── Composant principal ───
 function MaJournee({ recipes, nutrients, besoins, onRefreshRecipe, onEditProfil }) {
   const [refreshingIndex, setRefreshingIndex] = useState(null);
-  // V2 : état pour afficher/masquer le détail nutritionnel par repas
   const [detailOuvert, setDetailOuvert] = useState({});
 
-  // Sécurité + V2 : message guide amélioré
+  // Sécurité + message guide
   if (!recipes || recipes.length === 0 || recipes.every(r => !r)) {
     return (
       <div className="w-full max-w-md px-4 mx-auto pb-20 flex flex-col items-center justify-center min-h-[60vh]">
@@ -104,16 +109,25 @@ function MaJournee({ recipes, nutrients, besoins, onRefreshRecipe, onEditProfil 
     setDetailOuvert(prev => ({ ...prev, [index]: !prev[index] }));
   };
 
-  // V2 : Calcul des totaux globaux (lipides, glucides, fibres)
-  const totalLipides = recipes.reduce((sum, r) => sum + obtenirValeur(r, "Fat"), 0);
-  const totalGlucides = recipes.reduce((sum, r) => sum + obtenirValeur(r, "Carbohydrates"), 0);
-  const totalFibres = recipes.reduce((sum, r) => sum + obtenirValeur(r, "Fiber"), 0);
+  // Calcul des totaux globaux
+  const totalCal = nutrients ? Math.round(nutrients.calories) : 0;
+  const totalProt = nutrients ? Math.round(nutrients.protein) : 0;
+  const totalLipides = Math.round(recipes.reduce((sum, r) => sum + obtenirValeur(r, "Fat"), 0));
+  const totalGlucides = Math.round(recipes.reduce((sum, r) => sum + obtenirValeur(r, "Carbohydrates"), 0));
+  const totalFibres = Math.round(recipes.reduce((sum, r) => sum + obtenirValeur(r, "Fiber"), 0));
+
+  // Objectifs calculés
+  const objCal = besoins?.calories || 2000;
+  const objProt = besoins?.proteines || 80;
+  const objLipides = Math.round(objCal * 0.30 / 9);
+  const objGlucides = Math.round(objCal * 0.50 / 4);
+  const objFibres = 30;
 
   return (
     <div className="w-full max-w-md px-4 mx-auto pb-20">
 
       {/* ─── Header ─── */}
-      <div className="flex items-center justify-between pt-6 mb-8">
+      <div className="flex items-center justify-between pt-6 mb-6">
         <h1 className="text-3xl font-black text-gray-800">Ma Journée</h1>
         {onEditProfil && (
           <button
@@ -125,46 +139,15 @@ function MaJournee({ recipes, nutrients, besoins, onRefreshRecipe, onEditProfil 
         )}
       </div>
 
-      {/* ─── Dashboard global ─── */}
+      {/* ─── Dashboard compact unifié ─── */}
       {besoins && (
-        <div className="mb-6 p-8 bg-white border border-amber-100 rounded-[3rem] shadow-xl flex justify-around items-center">
-          <AnneauProgression
-            pourcentage={nutrients ? (nutrients.calories / besoins.calories) * 100 : 0}
-            label="Total Calories"
-            valeur={nutrients ? Math.round(nutrients.calories) : 0}
-            unite="kcal" taille={140} couleur="text-amber-500"
-          />
-          <AnneauProgression
-            pourcentage={nutrients ? (nutrients.protein / besoins.proteines) * 100 : 0}
-            label="Total Protéines"
-            valeur={nutrients ? Math.round(nutrients.protein) : 0}
-            unite="g" taille={110} couleur="text-orange-500"
-          />
-        </div>
-      )}
-
-      {/* ─── V2 : Récapitulatif nutritionnel détaillé ─── */}
-      {besoins && nutrients && (
-        <div className="mb-8 p-4 bg-white rounded-2xl border border-amber-100 shadow-sm space-y-2">
-          <p className="text-[10px] font-bold text-amber-800/50 uppercase tracking-wider mb-2">Récapitulatif nutritionnel</p>
-          <BarreNutriment label="Lipides" valeur={Math.round(totalLipides)} unite="g" couleur="bg-yellow-400" max={Math.round(besoins.calories * 0.30 / 9)} />
-          <BarreNutriment label="Glucides" valeur={Math.round(totalGlucides)} unite="g" couleur="bg-blue-400" max={Math.round(besoins.calories * 0.50 / 4)} />
-          <BarreNutriment label="Fibres" valeur={Math.round(totalFibres)} unite="g" couleur="bg-green-400" max={30} />
-        </div>
-      )}
-
-      {/* ─── Objectifs journaliers ─── */}
-      {besoins && besoins.calories > 0 && (
-        <div className="mb-8 p-4 bg-amber-50/50 rounded-2xl border border-amber-100 flex justify-around text-center">
-          <div>
-            <p className="text-[10px] font-bold text-amber-800/50 uppercase">Objectif cal.</p>
-            <p className="font-black text-amber-900">{besoins.calories} <span className="text-xs font-medium">kcal</span></p>
-          </div>
-          <div className="w-px bg-amber-200" />
-          <div>
-            <p className="text-[10px] font-bold text-amber-800/50 uppercase">Objectif prot.</p>
-            <p className="font-black text-amber-900">{besoins.proteines} <span className="text-xs font-medium">g</span></p>
-          </div>
+        <div className="mb-8 p-5 bg-white rounded-3xl border border-amber-100 shadow-lg space-y-3">
+          <p className="text-[10px] font-bold text-amber-800/50 uppercase tracking-wider">Bilan nutritionnel du jour</p>
+          <BarreNutriment label="Calories" valeur={totalCal} objectif={objCal} unite="kcal" couleur="bg-amber-400" emoji="🔥" />
+          <BarreNutriment label="Protéines" valeur={totalProt} objectif={objProt} unite="g" couleur="bg-orange-400" emoji="💪" />
+          <BarreNutriment label="Lipides" valeur={totalLipides} objectif={objLipides} unite="g" couleur="bg-yellow-400" emoji="🫒" />
+          <BarreNutriment label="Glucides" valeur={totalGlucides} objectif={objGlucides} unite="g" couleur="bg-blue-400" emoji="🌾" />
+          <BarreNutriment label="Fibres" valeur={totalFibres} objectif={objFibres} unite="g" couleur="bg-green-400" emoji="🥦" />
         </div>
       )}
 
@@ -175,15 +158,14 @@ function MaJournee({ recipes, nutrients, besoins, onRefreshRecipe, onEditProfil 
 
           const calPlat = obtenirValeur(repas.donnee, "Calories");
           const protPlat = obtenirValeur(repas.donnee, "Protein");
-          // V2 : Nutriments détaillés par repas
           const lipPlat = obtenirValeur(repas.donnee, "Fat");
           const glucPlat = obtenirValeur(repas.donnee, "Carbohydrates");
           const fibrePlat = obtenirValeur(repas.donnee, "Fiber");
 
           const multiProt = [0.3, 0.35, 0.1, 0.25][index];
           const divCal = index === 0 ? 3 : (index === 2 ? 6 : 4);
-          const objCal = besoins?.calories ? besoins.calories / divCal : 500;
-          const objProt = besoins?.proteines ? besoins.proteines * multiProt : 30;
+          const objCalRepas = besoins?.calories ? besoins.calories / divCal : 500;
+          const objProtRepas = besoins?.proteines ? besoins.proteines * multiProt : 30;
 
           const isRefreshing = refreshingIndex === index;
           const showDetail = detailOuvert[index] || false;
@@ -214,7 +196,6 @@ function MaJournee({ recipes, nutrients, besoins, onRefreshRecipe, onEditProfil 
                 </div>
 
                 <div className="p-6">
-                  {/* V2 : title_fr avec fallback sur title */}
                   <h3 className="font-extrabold text-gray-800 text-xl leading-tight mb-4 group-hover:text-amber-600 transition-colors">
                     {repas.donnee.title_fr || repas.donnee.title}
                   </h3>
@@ -222,20 +203,20 @@ function MaJournee({ recipes, nutrients, besoins, onRefreshRecipe, onEditProfil 
                   {/* Mini-anneaux par repas */}
                   <div className="flex justify-around items-center bg-amber-50/50 p-4 rounded-3xl mb-4 border border-amber-100">
                     <AnneauProgression
-                      pourcentage={(calPlat / objCal) * 100}
+                      pourcentage={(calPlat / objCalRepas) * 100}
                       valeur={Math.round(calPlat)}
-                      unite={`/ ${Math.round(objCal)} kcal`}
+                      unite={`/ ${Math.round(objCalRepas)} kcal`}
                       label="Calories" taille={85} couleur="text-amber-500"
                     />
                     <AnneauProgression
-                      pourcentage={(protPlat / objProt) * 100}
+                      pourcentage={(protPlat / objProtRepas) * 100}
                       valeur={Math.round(protPlat)}
-                      unite={`/ ${Math.round(objProt)} g`}
+                      unite={`/ ${Math.round(objProtRepas)} g`}
                       label="Protéines" taille={85} couleur="text-orange-500"
                     />
                   </div>
 
-                  {/* V2 : Bouton pour afficher le détail nutritionnel */}
+                  {/* Bouton détail nutritionnel */}
                   <button
                     onClick={() => toggleDetail(index)}
                     className="w-full text-center text-xs font-bold text-amber-600/60 hover:text-amber-600 mb-4 transition-colors"
@@ -243,12 +224,11 @@ function MaJournee({ recipes, nutrients, besoins, onRefreshRecipe, onEditProfil 
                     {showDetail ? "▲ Masquer le détail" : "▼ Voir lipides, glucides, fibres"}
                   </button>
 
-                  {/* V2 : Détail nutritionnel par repas */}
                   {showDetail && (
                     <div className="mb-4 p-3 bg-gray-50 rounded-2xl space-y-2 animate-fadeIn">
-                      <BarreNutriment label="Lipides" valeur={Math.round(lipPlat)} unite="g" couleur="bg-yellow-400" max={30} />
-                      <BarreNutriment label="Glucides" valeur={Math.round(glucPlat)} unite="g" couleur="bg-blue-400" max={80} />
-                      <BarreNutriment label="Fibres" valeur={Math.round(fibrePlat)} unite="g" couleur="bg-green-400" max={10} />
+                      <BarreNutriment label="Lipides" valeur={Math.round(lipPlat)} objectif={Math.round(objLipides / 4)} unite="g" couleur="bg-yellow-400" emoji="" />
+                      <BarreNutriment label="Glucides" valeur={Math.round(glucPlat)} objectif={Math.round(objGlucides / 4)} unite="g" couleur="bg-blue-400" emoji="" />
+                      <BarreNutriment label="Fibres" valeur={Math.round(fibrePlat)} objectif={Math.round(objFibres / 4)} unite="g" couleur="bg-green-400" emoji="" />
                     </div>
                   )}
 
@@ -280,7 +260,7 @@ function MaJournee({ recipes, nutrients, besoins, onRefreshRecipe, onEditProfil 
         })}
       </div>
 
-      {/* ─── Animation CSS ─── */}
+      {/* ─── Animations CSS ─── */}
       <style>{`
         @keyframes fadeSlideUp {
           from { opacity: 0; transform: translateY(20px); }
