@@ -1,0 +1,387 @@
+================================================================================
+                    FOODQUANT - RÉCAPITULATIF V3 COMPLET
+                     Ce qui a été fait + Ce qu'il reste
+================================================================================
+
+Date : 15 mars 2026
+Auteur : Valérie K.
+Version : 3.0
+
+
+================================================================================
+1. ARCHITECTURE ACTUELLE DU PROJET (APRÈS V3)
+================================================================================
+
+1.1 - Arborescence des fichiers
+─────────────────────────────────
+
+foodquant/
+├── backend-php/
+│   ├── Dockerfile
+│   ├── db.php                  ← Connexion BDD (variables d'environnement)
+│   ├── jwt.php                 ← Génération/vérification tokens JWT
+│   ├── auth.php                ← Inscription, connexion, update profil
+│   ├── recettes.php            ← V3 : Priorité recettes locales > cache > Spoonacular > fallback
+│   ├── menu_hebdo.php          ← V3 : Menu semaine (générer, sélectionner, valider, courses)
+│   ├── bot_recettes_fr.php     ← V3 : 32 recettes françaises locales (sync, search, random)
+│   ├── traduction.php          ← V3 : MyMemory API (gratuit) + cache + fallback lien Google
+│   ├── historique.php          ← Sauvegarde/récupération historique repas + stats
+│   └── cache/                  ← Cache recettes + traductions (permanent)
+│
+├── frontend-react/
+│   └── src/
+│       ├── App.jsx             ← V3 : Structure Flexbox, routes, Footer global
+│       ├── main.jsx
+│       ├── index.css
+│       └── components/
+│           ├── Accueil.jsx     ← V3 : Sans Footer (géré par App.jsx)
+│           ├── Login.jsx
+│           ├── Profil.jsx
+│           ├── MaJournee.jsx   ← V3 : Liste courses intelligente + Marmiton + placeholder
+│           ├── MaSemaine.jsx   ← V3 : Calendrier hebdo + valider + courses
+│           ├── Dashboard.jsx
+│           ├── NavBar.jsx      ← V3 : Fixée en haut, onglet Semaine ajouté
+│           └── Footer.jsx      ← V3 : Sticky footer, responsive mobile
+│
+└── docs/
+    └── GUIDE_SSL_VPS.md        ← V3 : Doc Let's Encrypt pour future migration
+
+
+1.2 - Technologies (mises à jour V3)
+──────────────────────────────────────
+
+  Frontend        : React (Vite) + Tailwind CSS v4 + Recharts
+  Backend         : PHP 8.2 (Docker) + PDO MySQL
+  API Recettes    : Spoonacular + 32 recettes françaises locales (BDD)
+  Traduction      : V3 : MyMemory API (gratuit, 5000 mots/jour) — remplace Claude Haiku
+  Auth            : JWT HMAC-SHA256 (7 jours)
+  BDD             : MySQL sur Railway (4 tables)
+  Hébergement     : Vercel (frontend) + Railway (backend + BDD)
+  SSL             : Automatique (Railway/Vercel) — doc VPS préparée
+
+
+================================================================================
+2. CE QUI A ÉTÉ FAIT — SESSION DU 15 MARS 2026
+================================================================================
+
+2.1 - Responsive & Footer mobile
+──────────────────────────────────
+
+  App.jsx       → Footer invisible, pas de structure Flexbox
+                  Correction : min-h-screen + grow + Footer global
+
+  Footer.jsx    → Pas de mt-auto, pas responsive
+                  Correction : Sticky footer, liens empilés mobile, tailles tactiles
+
+  NavBar.jsx    → Fixée en bas, masquait le footer
+                  Correction : Déplacée en haut (fixed top), backdrop-blur
+
+  Accueil.jsx   → Footer en doublon
+                  Correction : Suppression du Footer local (géré par App.jsx)
+
+
+2.2 - Menu hebdomadaire
+────────────────────────
+
+  Système complet de planification sur 7 jours avec 4 choix par repas.
+  L'utilisateur sélectionne ses plats, valide sa semaine, et les données
+  remontent dans le Dashboard pour les stats et badges.
+
+  Fichiers créés :
+    - menu_hebdo.php   → Backend, 4 actions : générer, sélectionner, valider, courses
+    - MaSemaine.jsx    → Frontend calendrier hebdomadaire
+
+  Table MySQL : menu_hebdomadaire
+    - utilisateur_id, semaine, jour, type_repas, choix_json, selection_index
+
+  Fonctionnalités :
+    - Navigation semaine précédente/suivante
+    - Barre de progression X/28
+    - Badge ✓ par jour complet
+    - Bouton « Valider ma semaine »
+    - Injection dans historique_repas (Dashboard/badges)
+    - Liste de courses hebdo consolidée (arrondis réalistes)
+    - Cartes cliquables → lien Marmiton quand sélectionné
+
+
+2.3 - Liste de courses intelligente
+─────────────────────────────────────
+
+  Refonte complète de la modale liste de courses (MaJournee.jsx) :
+
+    - Parsing des quantités (fractions 1/2, décimaux, unités collées 100g)
+    - Cumul automatique (poulet lundi + poulet jeudi = total)
+    - Arrondis réalistes :
+        → Œufs, oignons → entiers (pas de 0.7 œuf)
+        → Grammes : ≤50g → par 5g, ≤200g → par 10g, >200g → par 50g
+        → Centilitres → par 5cl
+        → Litres → par quart (0.25L, 0.5L, 0.75L, 1L)
+        → Cuillères → par demi
+    - Tri intelligent (ingrédients multi-repas en premier)
+    - Fractions lisibles (¼, ½, ¾)
+
+
+2.4 - Bot recettes françaises
+───────────────────────────────
+
+  32 recettes françaises intégrées en BDD (8 par type de repas) :
+    - 8 petit-déjeuners (porridge, omelette, tartines avocat, pancakes...)
+    - 8 déjeuners (poulet grillé, saumon quinoa, curry lentilles, risotto...)
+    - 8 collations (energy balls, pomme-cacahuète, smoothie, houmous...)
+    - 8 dîners (cabillaud brocoli, soupe lentilles, quiche, tofu sauté...)
+
+  Avec ingrédients, instructions et macros complètes (cal/prot/lip/glu/fib).
+
+  Les recettes locales sont prioritaires dans le moteur de menus :
+    1) Recettes locales (BDD) → françaises, gratuites, cohérentes
+    2) Cache Spoonacular
+    3) API Spoonacular
+    4) Recettes de secours (fallback)
+
+  Les recettes locales affichent un placeholder emoji (dégradé ambré + emoji
+  du type de repas) au lieu d'une fausse image Spoonacular.
+
+  Fichier : bot_recettes_fr.php
+    - ?action=sync       → Insère les recettes en BDD
+    - ?action=sync&reset=1 → Réinitialise et réinsère
+    - ?action=status     → Comptage par type
+    - ?action=search&q=  → Recherche locale
+    - ?action=random     → Recettes aléatoires (pour moteur menus)
+
+
+2.5 - Traduction gratuite (MyMemory)
+──────────────────────────────────────
+
+  Remplacement de l'API Claude Haiku (payante) par MyMemory API :
+    - Gratuit, 5000 mots/jour, aucune clé nécessaire
+    - Le cache existant des traductions Claude est conservé
+    - Vérification de qualité (texte identique, longueur, score)
+
+  Système de fallback en 3 niveaux :
+    1) MyMemory API → traduction automatique
+    2) Cache local  → si déjà traduit auparavant
+    3) Lien Google Translate → cliquable, pré-rempli
+
+  Variable ANTHROPIC_API_KEY supprimable des variables Railway.
+
+
+2.6 - Redirection Marmiton
+────────────────────────────
+
+  Le bouton « 📖 Recette » redirige vers une recherche Marmiton avec le
+  titre français du plat :
+    https://www.marmiton.org/recettes/recherche.aspx?aqt=Poulet+grillé+aux+herbes
+
+
+2.7 - Documentation
+─────────────────────
+
+  - Cahier des modifications V3 (document Word)
+  - Guide SSL/Let's Encrypt pour future migration VPS (GUIDE_SSL_VPS.md)
+
+
+2.8 - Dernières corrections (fin de session)
+──────────────────────────────────────────────
+
+  Liste de courses hebdo (MaSemaine.jsx) :
+    - Les quantités brutes de Spoonacular (0.17 avocat, 0.08 tasse d'oignon)
+      sont maintenant parsées, cumulées et arrondies comme dans MaJournee.jsx
+    - "0.17 avocat ×2" → "1 avocat"
+    - "0.33 jus de citron ×2" → "1 jus de citron"
+    - "0.08 tasse d'oignon ×2" → "¼ tasse oignon"
+
+  Cartes recettes hebdo cliquables (MaSemaine.jsx) :
+    - Quand une carte est sélectionnée (contour ambré + ✓), un lien
+      "📖 Voir recette" apparaît sous le titre
+    - Redirige vers Marmiton avec le titre français du plat
+    - Le clic sur le lien ne désélectionne pas la carte
+
+
+================================================================================
+3. TABLEAU DE BORD COMPLET — FAIT / À FAIRE
+================================================================================
+
+3.1 - Fonctionnalités implémentées (25 ✅)
+─────────────────────────────────────────────
+
+  ✅ Inscription / Connexion (JWT)              V2  bcrypt, JWT 7j, validation serveur
+  ✅ Profil utilisateur (Mifflin-St Jeor)       V1  Age, poids, taille, sexe, objectif, régime
+  ✅ Génération menu quotidien (4 repas)         V1  Spoonacular + cache + fallback
+  ✅ Priorité recettes locales françaises        V3  32 recettes FR en BDD, prioritaires
+  ✅ Traduction recettes (MyMemory)              V3  Gratuit, cache conservé, fallback lien
+  ✅ Bilan nutritionnel (cal/prot/lip/glu/fib)   V2  Barres de progression + dépassement
+  ✅ Détail nutritionnel par repas               V2  Dépliant lipides/glucides/fibres
+  ✅ Liste de courses intelligente               V3  Cumul, arrondis réalistes, copier
+  ✅ Dashboard + graphiques (Recharts)           V2  Barres calories/prot, sélecteur période
+  ✅ Badges / gamification (8 badges)            V2  Streak, régulier, diamant, etc.
+  ✅ Message de bienvenue (toast)                V2  Après inscription/connexion
+  ✅ Footer RGPD + mentions + CGU                V2  Modales animées
+  ✅ Responsive mobile + sticky footer           V3  Flexbox, tailles tactiles, breakpoints
+  ✅ NavBar fixée en haut                        V3  backdrop-blur, responsive
+  ✅ Menu hebdomadaire (7j × 4 repas × 4 choix) V3  Calendrier, sélection, progression
+  ✅ Valider ma semaine → Dashboard              V3  Injection historique_repas, badges
+  ✅ Liste courses hebdo                         V3  Modale consolidée, copier
+  ✅ Bouton Recette → Marmiton                   V3  Recherche par titre français
+  ✅ Placeholder emoji (recettes locales)        V3  Dégradé ambré + emoji repas
+  ✅ Lien Marmiton sur cartes hebdo              V3  Visible quand carte sélectionnée
+  ✅ Arrondis courses hebdo                      V3  Même parsing intelligent que Ma Journée
+  ✅ Doc SSL (Let's Encrypt)                     V3  GUIDE_SSL_VPS.md pour futur VPS
+  ✅ Bouton Changer (remplacer un repas)         V1  Rafraîchit un repas individuellement
+  ✅ Sauvegarde menu du jour                     V2  Historique + feedback visuel
+  ✅ Variables d'environnement sécurisées         V2  Railway, plus de credentials en dur
+
+
+3.2 - Ce qu'il reste à faire (18 ❌) — Version 4+
+───────────────────────────────────────────────────
+
+  PRIORITÉ HAUTE :
+  ❌ Courbe de poids                    Saisie régulière + graphique évolution vs objectif
+  ❌ Favoris et historique de recettes   Bouton ❤ + page favoris + réutiliser
+  ❌ Suppression de compte (RGPD)        Bouton dans profil + suppression cascade
+  ❌ Bandeau consentement localStorage   RGPD : accepter/refuser stockage local
+
+  PRIORITÉ MOYENNE :
+  ❌ Refresh tokens JWT                  Renouvellement auto avant expiration
+  ❌ Rate limiting authentification      Anti brute-force sur login/register
+  ❌ Tests unitaires PHP (PHPUnit)       Backend : auth, recettes, historique, menu_hebdo
+  ❌ Tests React (Jest/Testing Library)  Frontend : composants, interactions
+
+  PRIORITÉ BASSE :
+  ❌ Notifications / rappels             Rappel sauvegarde, streak en danger, email hebdo
+  ❌ Mode hors ligne (PWA)               Service worker, cache offline, install mobile
+  ❌ Export PDF liste de courses          Générer PDF propre + partage email
+  ❌ Améliorer traduction instructions    Traduire les étapes de préparation
+  ❌ Dictionnaire local ingrédients      Traduction instantanée sans API
+  ❌ Accessibilité (ARIA, daltoniens)    Attributs ARIA, contraste suffisant
+  ❌ Enrichir la base recettes locales   Ajouter des recettes dans bot_recettes_fr.php
+  ❌ Images pour recettes locales        Héberger de vraies photos ou intégrer Gustar.io
+  ❌ Logs de sécurité                    Tentatives de connexion échouées
+  ❌ HTTPS strict (HSTS)                 Appliquer quand migration vers VPS
+
+
+================================================================================
+4. BASE DE DONNÉES MySQL (4 TABLES)
+================================================================================
+
+4.1 - Table « utilisateurs » (existante)
+──────────────────────────────────────────
+
+  idutilisateurs    INT AUTO_INCREMENT PK     Identifiant unique
+  prenom            VARCHAR(100)              Prénom de l'utilisateur
+  email             VARCHAR(255) UNIQUE       Adresse email
+  mot_de_passe      VARCHAR(255)              Hashé avec bcrypt
+  age               INT                       Âge
+  weight            FLOAT                     Poids en kg
+  height            FLOAT                     Taille en cm
+  gender            VARCHAR(10)               homme / femme
+  goal              VARCHAR(20)               perte / maintien / muscle
+  diet              VARCHAR(30)               classique / végétarien / végan / sans gluten
+  besoin_calorique  INT                       Calcul Mifflin-St Jeor
+  date_inscription  DATETIME                  Date de création du compte
+
+
+4.2 - Table « historique_repas » (existante)
+─────────────────────────────────────────────
+
+  id                INT AUTO_INCREMENT PK     Identifiant unique
+  utilisateur_id    INT FK                    Référence utilisateurs
+  date_repas        DATE                      Date du jour
+  recettes_json     MEDIUMTEXT                4 recettes du jour en JSON (~1Ko)
+  total_calories    INT                       Somme calories du jour
+  total_proteines   INT                       Somme protéines du jour
+  created_at        DATETIME                  Date de création
+  UNIQUE KEY        (utilisateur_id, date_repas)
+
+
+4.3 - Table « menu_hebdomadaire » (V3)
+────────────────────────────────────────
+
+  id                INT AUTO_INCREMENT PK     Identifiant unique
+  utilisateur_id    INT FK                    Référence utilisateurs
+  semaine           VARCHAR(10)               Format ISO : 2026-W12
+  jour              TINYINT                   1 (lundi) à 7 (dimanche)
+  type_repas        VARCHAR(20)               breakfast / lunch / snack / dinner
+  choix_json        MEDIUMTEXT                JSON : tableau de 4 recettes proposées
+  selection_index   TINYINT NULL              Index 0-3 du choix de l'utilisateur
+  created_at        DATETIME                  Date de création
+  updated_at        DATETIME                  Dernière modification
+  UNIQUE KEY        (utilisateur_id, semaine, jour, type_repas)
+
+
+4.4 - Table « recettes_locales » (V3)
+───────────────────────────────────────
+
+  id                INT AUTO_INCREMENT PK     Identifiant unique
+  titre             VARCHAR(500)              Nom de la recette
+  titre_normalise   VARCHAR(500)              Lowercase, sans accents (dédoublonnage)
+  image_url         VARCHAR(1000)             URL image (ou vide → placeholder emoji)
+  source_url        VARCHAR(1000)             URL source (optionnel)
+  ingredients_json  MEDIUMTEXT                JSON des ingrédients
+  instructions      TEXT                      Étapes de préparation
+  calories          INT                       Kilocalories
+  proteines         FLOAT                     Protéines en grammes
+  lipides           FLOAT                     Lipides en grammes
+  glucides          FLOAT                     Glucides en grammes
+  fibres            FLOAT                     Fibres en grammes
+  type_repas        VARCHAR(20)               breakfast / lunch / snack / dinner
+  langue            VARCHAR(5) DEFAULT 'fr'   Langue de la recette
+  created_at        DATETIME                  Date d'insertion
+  UNIQUE KEY        (titre_normalise, type_repas)
+
+
+================================================================================
+5. VARIABLES D'ENVIRONNEMENT (RAILWAY)
+================================================================================
+
+  MYSQLHOST          Adresse du serveur MySQL
+  MYSQLUSER          Utilisateur MySQL
+  MYSQLPASSWORD      Mot de passe MySQL
+  MYSQLDATABASE      Nom de la base de données
+  MYSQLPORT          Port MySQL
+  SPOONACULAR_KEY    Clé API Spoonacular
+  JWT_SECRET         Clé secrète pour les tokens JWT
+
+  ⚠️ SUPPRIMÉE : ANTHROPIC_API_KEY
+     Plus nécessaire depuis le passage à MyMemory (gratuit, sans clé).
+
+
+================================================================================
+6. LISTE COMPLÈTE DES FICHIERS V3
+================================================================================
+
+6.1 - Fichiers créés
+──────────────────────
+
+  backend-php/menu_hebdo.php                     API menu hebdomadaire (4 actions)
+  backend-php/bot_recettes_fr.php                32 recettes françaises + CRUD BDD
+  frontend-react/src/components/MaSemaine.jsx    Interface calendrier hebdomadaire
+  docs/GUIDE_SSL_VPS.md                          Documentation Let's Encrypt pour VPS
+
+
+6.2 - Fichiers modifiés
+─────────────────────────
+
+  backend-php/recettes.php         Priorité recettes locales avant Spoonacular
+  backend-php/traduction.php       MyMemory API remplace Claude Haiku + fallback lien
+  frontend-react/src/App.jsx       Flexbox, Footer global, route MaSemaine, NavBar en haut
+  frontend-react/src/components/Accueil.jsx    Suppression Footer doublon
+  frontend-react/src/components/NavBar.jsx     Fixée en haut, onglet Semaine
+  frontend-react/src/components/Footer.jsx     Sticky footer mt-auto, responsive
+  frontend-react/src/components/MaJournee.jsx  Liste courses intelligente, Marmiton, placeholder
+
+
+================================================================================
+7. LIENS DU PROJET
+================================================================================
+
+  Application en ligne :  https://foodquant.vercel.app
+  API Backend :           https://foodquant-production.up.railway.app
+  Code source :           https://github.com/valerie-kergonan/foodquant
+  API Spoonacular :       https://spoonacular.com/food-api
+  API MyMemory :          https://mymemory.translated.net (gratuit, sans clé)
+  Contact :               foodquant.app@gmail.com
+
+
+================================================================================
+                              FIN DU DOCUMENT
+================================================================================
