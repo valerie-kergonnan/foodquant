@@ -42,44 +42,58 @@ function authHeaders() {
 function CarteRecette({ recette, isSelected, onSelect, petit = false }) {
   const cal = recette.calories || 0;
   const titre = recette.title_fr || recette.title || "Recette";
+  const marmitonUrl = `https://www.marmiton.org/recettes/recherche.aspx?aqt=${encodeURIComponent(titre)}`;
 
   return (
-    <button
-      onClick={onSelect}
-      className={`w-full text-left rounded-2xl overflow-hidden border-2 transition-all duration-300 ${
-        isSelected
-          ? "border-amber-500 shadow-lg shadow-amber-100 scale-[1.02]"
-          : "border-gray-100 hover:border-amber-200 hover:shadow-md"
-      }`}
-    >
-      <div className="relative">
-        {recette.source === 'local_fr' ? (
-          <div className={`w-full bg-linear-to-br from-amber-50 to-orange-100 flex items-center justify-center ${petit ? "h-24" : "h-32"}`}>
-            <span className="text-3xl">🍽️</span>
+    <div className={`w-full text-left rounded-2xl overflow-hidden border-2 transition-all duration-300 ${
+      isSelected
+        ? "border-amber-500 shadow-lg shadow-amber-100 scale-[1.02]"
+        : "border-gray-100 hover:border-amber-200 hover:shadow-md"
+    }`}>
+      <button onClick={onSelect} className="w-full text-left">
+        <div className="relative">
+          {recette.source === 'local_fr' ? (
+            <div className={`w-full bg-linear-to-br from-amber-50 to-orange-100 flex items-center justify-center ${petit ? "h-24" : "h-32"}`}>
+              <span className="text-3xl">🍽️</span>
+            </div>
+          ) : (
+            <img
+              src={recette.image}
+              alt={titre}
+              className={`w-full object-cover ${petit ? "h-24" : "h-32"}`}
+              loading="lazy"
+            />
+          )}
+          {isSelected && (
+            <div className="absolute top-2 right-2 w-7 h-7 bg-amber-500 rounded-full flex items-center justify-center shadow-lg">
+              <span className="text-white text-xs font-bold">✓</span>
+            </div>
+          )}
+          <div className="absolute bottom-0 left-0 right-0 bg-linear-to-t from-black/60 to-transparent px-3 py-2">
+            <span className="text-white text-[10px] font-bold">{cal} kcal</span>
           </div>
-        ) : (
-          <img
-            src={recette.image}
-            alt={titre}
-            className={`w-full object-cover ${petit ? "h-24" : "h-32"}`}
-            loading="lazy"
-          />
-        )}
-        {isSelected && (
-          <div className="absolute top-2 right-2 w-7 h-7 bg-amber-500 rounded-full flex items-center justify-center shadow-lg">
-            <span className="text-white text-xs font-bold">✓</span>
-          </div>
-        )}
-        <div className="absolute bottom-0 left-0 right-0 bg-linear-to-t from-black/60 to-transparent px-3 py-2">
-          <span className="text-white text-[10px] font-bold">{cal} kcal</span>
         </div>
-      </div>
-      <div className="p-2.5">
-        <p className={`font-bold text-gray-800 leading-tight ${petit ? "text-[11px]" : "text-xs"} line-clamp-2`}>
-          {titre}
-        </p>
-      </div>
-    </button>
+        <div className="p-2.5 pb-1">
+          <p className={`font-bold text-gray-800 leading-tight ${petit ? "text-[11px]" : "text-xs"} line-clamp-2`}>
+            {titre}
+          </p>
+        </div>
+      </button>
+      {/* Lien Marmiton visible quand sélectionné */}
+      {isSelected && (
+        <div className="px-2.5 pb-2">
+          <a
+            href={marmitonUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[10px] text-amber-600 hover:text-amber-800 font-bold underline"
+            onClick={(e) => e.stopPropagation()}
+          >
+            📖 Voir recette
+          </a>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -476,6 +490,105 @@ function MaSemaine() {
 }
 
 // ═══════════════════════════════════════════════════════
+// Parsing intelligent des ingrédients (hebdo)
+// ═══════════════════════════════════════════════════════
+
+const INGREDIENTS_ENTIERS = [
+  'oeuf', 'œuf', 'egg', 'oignon', 'onion', 'ail', 'garlic', 'tomate', 'tomato',
+  'pomme', 'apple', 'banane', 'banana', 'citron', 'lemon', 'orange', 'avocat', 'avocado',
+  'poivron', 'pepper', 'concombre', 'cucumber', 'carotte', 'carrot', 'pomme de terre', 'potato',
+  'courgette', 'zucchini', 'aubergine', 'eggplant',
+];
+
+function parseIngHebdo(texte) {
+  if (!texte) return { quantite: null, unite: '', nom: texte || '' };
+  let t = texte.trim();
+  const match = t.match(/^(\d+\s*\/\s*\d+|\d+[.,]\d+|\d+)\s*/);
+  let quantite = null;
+  let reste = t;
+  if (match) {
+    const q = match[1].replace(',', '.');
+    quantite = q.includes('/') ? parseFloat(q.split('/')[0]) / parseFloat(q.split('/')[1]) : parseFloat(q);
+    reste = t.slice(match[0].length).trim();
+  }
+  // Séparer unité et nom simplement
+  const uniteMatch = reste.match(/^(g|kg|ml|cl|l|tsp|tbsp|cup|cups|tasse|tasses|c\.à\.s|c\.à\.c|oz|lb|pièces?|tranches?|gousses?|boîtes?|pincées?|poignées?|brins?|feuilles?)\s+/i);
+  let unite = '', nom = reste;
+  if (uniteMatch) {
+    unite = uniteMatch[1].toLowerCase();
+    nom = reste.slice(uniteMatch[0].length).replace(/^de\s+|^d'/i, '').trim();
+  } else {
+    nom = reste.replace(/^de\s+|^d'/i, '').trim();
+  }
+  if (!nom) nom = texte.trim();
+  return { quantite, unite, nom };
+}
+
+function normaliserNomHebdo(nom) {
+  return nom.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function arrondirHebdo(q, unite, nom) {
+  if (q === null || q === 0) return q;
+  const n = nom.toLowerCase();
+  if (INGREDIENTS_ENTIERS.some(ie => n.includes(ie))) return Math.ceil(q);
+  if (['g'].includes(unite)) {
+    if (q <= 50) return Math.ceil(q / 5) * 5;
+    if (q <= 200) return Math.ceil(q / 10) * 10;
+    return Math.ceil(q / 50) * 50;
+  }
+  if (unite === 'ml') {
+    if (q <= 50) return Math.ceil(q / 5) * 5;
+    if (q <= 200) return Math.ceil(q / 10) * 10;
+    return Math.ceil(q / 50) * 50;
+  }
+  if (unite === 'cl') return q <= 10 ? Math.ceil(q) : Math.ceil(q / 5) * 5;
+  if (['l', 'tasse', 'tasses', 'cup', 'cups'].includes(unite)) return Math.ceil(q * 4) / 4;
+  if (['tsp', 'tbsp', 'c.à.c', 'c.à.s'].includes(unite)) return Math.ceil(q * 2) / 2;
+  if (['pièce', 'tranche', 'gousse', 'boîte', 'feuille', 'brin', 'pincée', 'poignée'].includes(unite)) return Math.ceil(q);
+  if (['oz', 'lb'].includes(unite)) return Math.ceil(q * 2) / 2;
+  return Math.ceil(q * 10) / 10;
+}
+
+function formaterQteHebdo(q, unite) {
+  if (q === null) return '';
+  let s;
+  if (Number.isInteger(q)) s = q.toString();
+  else if (q === 0.25) s = '¼';
+  else if (q === 0.5) s = '½';
+  else if (q === 0.75) s = '¾';
+  else s = q.toFixed(1).replace('.0', '');
+  return unite ? `${s} ${unite}` : s;
+}
+
+function traiterIngredientsHebdo(rawIngredients) {
+  const cumul = {};
+  rawIngredients.forEach((ing) => {
+    const { quantite, unite, nom } = parseIngHebdo(ing.texte);
+    const cle = normaliserNomHebdo(nom);
+    if (!cle) return;
+    if (cumul[cle]) {
+      if (quantite !== null && cumul[cle].quantite !== null && cumul[cle].unite === unite) {
+        cumul[cle].quantite += quantite;
+      }
+      cumul[cle].count++;
+    } else {
+      cumul[cle] = { quantite, unite, nomOriginal: nom, count: 1 };
+    }
+  });
+
+  return Object.entries(cumul).map(([, data]) => {
+    const qArr = arrondirHebdo(data.quantite, data.unite, data.nomOriginal);
+    const qStr = formaterQteHebdo(qArr, data.unite);
+    const texte = qStr ? `${qStr} ${data.nomOriginal}` : data.nomOriginal;
+    return {
+      texte: texte.charAt(0).toUpperCase() + texte.slice(1),
+      count: data.count,
+    };
+  }).sort((a, b) => b.count !== a.count ? b.count - a.count : a.texte.localeCompare(b.texte, 'fr'));
+}
+
+// ═══════════════════════════════════════════════════════
 // Modale Liste de courses hebdomadaire
 // ═══════════════════════════════════════════════════════
 
@@ -494,19 +607,7 @@ function ModalCoursesHebdo({ semaine, onClose }) {
         );
         const data = await res.json();
         if (data.success && data.ingredients) {
-          // Dédupliquer et regrouper
-          const cumul = {};
-          data.ingredients.forEach((ing) => {
-            const cle = ing.texte.toLowerCase().trim();
-            if (cumul[cle]) {
-              cumul[cle].count++;
-            } else {
-              cumul[cle] = { texte: ing.texte, count: 1 };
-            }
-          });
-          setIngredients(
-            Object.values(cumul).sort((a, b) => b.count - a.count)
-          );
+          setIngredients(traiterIngredientsHebdo(data.ingredients));
         }
       } catch {
         console.error("Erreur chargement courses");
@@ -515,7 +616,6 @@ function ModalCoursesHebdo({ semaine, onClose }) {
       }
     };
     charger();
-   
   }, [semaine]);
 
   const toggleCoche = (idx) => {
