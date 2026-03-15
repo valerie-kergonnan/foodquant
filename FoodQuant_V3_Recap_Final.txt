@@ -38,7 +38,7 @@ foodquant/
 │           ├── Login.jsx
 │           ├── Profil.jsx
 │           ├── MaJournee.jsx   ← V3 : Liste courses intelligente + Marmiton + placeholder
-│           ├── MaSemaine.jsx   ← V3 : Calendrier hebdo + valider + courses
+│           ├── MaSemaine.jsx   ← V3 : Calendrier hebdo + valider + courses + lien Marmiton
 │           ├── Dashboard.jsx
 │           ├── NavBar.jsx      ← V3 : Fixée en haut, onglet Semaine ajouté
 │           └── Footer.jsx      ← V3 : Sticky footer, responsive mobile
@@ -102,12 +102,13 @@ foodquant/
     - Injection dans historique_repas (Dashboard/badges)
     - Liste de courses hebdo consolidée (arrondis réalistes)
     - Cartes cliquables → lien Marmiton quand sélectionné
+    - Écran de chargement animé avec messages rotatifs
 
 
 2.3 - Liste de courses intelligente
 ─────────────────────────────────────
 
-  Refonte complète de la modale liste de courses (MaJournee.jsx) :
+  Refonte complète de la modale liste de courses (MaJournee.jsx + MaSemaine.jsx) :
 
     - Parsing des quantités (fractions 1/2, décimaux, unités collées 100g)
     - Cumul automatique (poulet lundi + poulet jeudi = total)
@@ -119,6 +120,7 @@ foodquant/
         → Cuillères → par demi
     - Tri intelligent (ingrédients multi-repas en premier)
     - Fractions lisibles (¼, ½, ¾)
+    - Appliqué sur les DEUX listes : Ma Journée + Ma Semaine
 
 
 2.4 - Bot recettes françaises
@@ -172,29 +174,17 @@ foodquant/
   titre français du plat :
     https://www.marmiton.org/recettes/recherche.aspx?aqt=Poulet+grillé+aux+herbes
 
+  Appliqué sur les DEUX pages :
+    - Ma Journée (bouton 📖 Recette sur chaque carte)
+    - Ma Semaine (lien "📖 Voir recette" sous les cartes sélectionnées)
+
 
 2.7 - Documentation
 ─────────────────────
 
   - Cahier des modifications V3 (document Word)
   - Guide SSL/Let's Encrypt pour future migration VPS (GUIDE_SSL_VPS.md)
-
-
-2.8 - Dernières corrections (fin de session)
-──────────────────────────────────────────────
-
-  Liste de courses hebdo (MaSemaine.jsx) :
-    - Les quantités brutes de Spoonacular (0.17 avocat, 0.08 tasse d'oignon)
-      sont maintenant parsées, cumulées et arrondies comme dans MaJournee.jsx
-    - "0.17 avocat ×2" → "1 avocat"
-    - "0.33 jus de citron ×2" → "1 jus de citron"
-    - "0.08 tasse d'oignon ×2" → "¼ tasse oignon"
-
-  Cartes recettes hebdo cliquables (MaSemaine.jsx) :
-    - Quand une carte est sélectionnée (contour ambré + ✓), un lien
-      "📖 Voir recette" apparaît sous le titre
-    - Redirige vers Marmiton avec le titre français du plat
-    - Le clic sur le lien ne désélectionne pas la carte
+  - Récapitulatif V3 complet (ce fichier)
 
 
 ================================================================================
@@ -220,11 +210,11 @@ foodquant/
   ✅ NavBar fixée en haut                        V3  backdrop-blur, responsive
   ✅ Menu hebdomadaire (7j × 4 repas × 4 choix) V3  Calendrier, sélection, progression
   ✅ Valider ma semaine → Dashboard              V3  Injection historique_repas, badges
-  ✅ Liste courses hebdo                         V3  Modale consolidée, copier
-  ✅ Bouton Recette → Marmiton                   V3  Recherche par titre français
-  ✅ Placeholder emoji (recettes locales)        V3  Dégradé ambré + emoji repas
+  ✅ Liste courses hebdo                         V3  Modale consolidée, arrondis, copier
+  ✅ Bouton Recette → Marmiton (Ma Journée)      V3  Recherche par titre français
   ✅ Lien Marmiton sur cartes hebdo              V3  Visible quand carte sélectionnée
   ✅ Arrondis courses hebdo                      V3  Même parsing intelligent que Ma Journée
+  ✅ Placeholder emoji (recettes locales)        V3  Dégradé ambré + emoji repas
   ✅ Doc SSL (Let's Encrypt)                     V3  GUIDE_SSL_VPS.md pour futur VPS
   ✅ Bouton Changer (remplacer un repas)         V1  Rafraîchit un repas individuellement
   ✅ Sauvegarde menu du jour                     V2  Historique + feedback visuel
@@ -371,7 +361,36 @@ foodquant/
 
 
 ================================================================================
-7. LIENS DU PROJET
+7. DIFFICULTÉS RENCONTRÉES ET SOLUTIONS (15 MARS)
+================================================================================
+
+  Problème : Footer en doublon (affiché 2 fois)
+    → Solution : Suppression du Footer dans Accueil.jsx, géré uniquement par App.jsx
+
+  Problème : NavBar en bas masquait le footer sur mobile
+    → Solution : NavBar déplacée en haut (fixed top-0), padding-top compensatoire
+
+  Problème : Collation inadaptée (salade en collation)
+    → Solution : Recettes locales françaises prioritaires avec vrais snacks
+
+  Problème : Images incohérentes sur les recettes locales
+    → Solution : Placeholder emoji (dégradé ambré + emoji du type de repas)
+
+  Problème : Quantités irréalistes dans la liste de courses (0.17 avocat)
+    → Solution : Parsing intelligent + arrondis réalistes (1 avocat)
+
+  Problème : Connexion bloquée sur "Chargement..."
+    → Cause : Incident réseau Railway (temporaire, pas lié au code)
+
+  Problème : verifyJWT undefined dans menu_hebdo.php
+    → Solution : Utilisation de verifierJWT (nom réel de la fonction dans jwt.php)
+
+  Problème : Warnings Tailwind v4 (bg-gradient, flex-grow, min-h-[44px])
+    → Solution : bg-linear-to-t, grow, min-h-11
+
+
+================================================================================
+8. LIENS DU PROJET
 ================================================================================
 
   Application en ligne :  https://foodquant.vercel.app
