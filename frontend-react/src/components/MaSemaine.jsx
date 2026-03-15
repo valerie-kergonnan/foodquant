@@ -101,63 +101,59 @@ function CarteRecette({ recette, isSelected, onSelect, petit = false }) {
 function MaSemaine() {
   const [semaine, setSemaine] = useState(getSemaineISO());
   const [menu, setMenu] = useState(null);
-  const [loading, setLoading] = useState(false);
   const [erreur, setErreur] = useState("");
   const [jourActif, setJourActif] = useState(new Date().getDay() || 7); // 1-7, lundi=1
-  const [saving, setSaving] = useState(null); // "jour-type" en cours de sauvegarde
-  const [loadingMessage, setLoadingMessage] = useState("");
+  const [saving, setSaving] = useState(null);
+  const [loadingJour, setLoadingJour] = useState(0); // 0 = pas en cours, 1-7 = jour en chargement
   const [showCourses, setShowCourses] = useState(false);
   const [validationLoading, setValidationLoading] = useState(false);
   const [validationOk, setValidationOk] = useState(false);
   const [validationErreur, setValidationErreur] = useState("");
 
-  const messages = [
-    "🍳 Préparation de tes menus...",
-    "📅 Organisation de la semaine...",
-    "🥗 Sélection des meilleures recettes...",
-    "🧑‍🍳 Nos chefs composent tes choix...",
-    "✨ Plus que quelques secondes...",
-  ];
+  const JOURS_LABELS = ["", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
 
-  // ─── Charger le menu de la semaine ───
+  // ─── V3 : Chargement parallèle AJAX — 7 jours lancés en même temps ───
   const chargerMenu = async (sem) => {
-    setLoading(true);
     setErreur("");
-    let msgIdx = 0;
-    setLoadingMessage(messages[0]);
-    const interval = setInterval(() => {
-      msgIdx = (msgIdx + 1) % messages.length;
-      setLoadingMessage(messages[msgIdx]);
-    }, 2000);
+    setMenu({});
+    setLoadingJour(7); // Indique qu'on charge
 
-    try {
-      const res = await fetch(
-        `${API_URL}/menu_hebdo.php?action=generer&semaine=${sem}`,
+    // Lancer les 7 requêtes en parallèle
+    const promesses = [];
+    for (let jour = 1; jour <= 7; jour++) {
+      const p = fetch(
+        `${API_URL}/menu_hebdo.php?action=generer&semaine=${sem}&jour=${jour}`,
         { headers: authHeaders() }
-      );
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || `Erreur ${res.status}`);
-      }
-
-      const data = await res.json();
-      if (data.success) {
-        setMenu(data.menu);
-      } else {
-        throw new Error(data.error || "Erreur inconnue");
-      }
-    } catch (e) {
-      setErreur(e.message);
-    } finally {
-      clearInterval(interval);
-      setLoading(false);
+      )
+        .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`Erreur ${res.status}`))))
+        .then((data) => {
+          if (data.success && data.menu) {
+            setMenu((prev) => ({ ...prev, [jour]: data.menu }));
+          }
+          return { jour, ok: true };
+        })
+        .catch((e) => {
+          console.error(`Erreur jour ${jour}:`, e.message);
+          return { jour, ok: false, error: e.message };
+        });
+      promesses.push(p);
     }
+
+    // Attendre que tout soit terminé
+    const resultats = await Promise.all(promesses);
+
+    // Vérifier si tout a échoué
+    const tousEchoues = resultats.every((r) => !r.ok);
+    if (tousEchoues && resultats[0]?.error) {
+      setErreur(resultats[0].error);
+    }
+
+    setLoadingJour(0);
   };
 
   useEffect(() => {
     chargerMenu(semaine);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [semaine]);
 
   // ─── Sélectionner un choix ───
@@ -263,23 +259,10 @@ function MaSemaine() {
   };
 
   const { fait, total } = getCompletion();
-
-  // ─── Écran de chargement ───
-  if (loading) {
-    return (
-      <div className="w-full max-w-lg mx-auto px-4 flex flex-col items-center justify-center min-h-[60vh]">
-        <div className="relative mb-6">
-          <div className="w-16 h-16 rounded-full border-4 border-amber-100 border-t-amber-500 animate-spin" />
-          <div className="absolute inset-0 flex items-center justify-center text-xl">📅</div>
-        </div>
-        <p className="text-base font-bold text-amber-800 animate-pulse text-center">{loadingMessage}</p>
-        <p className="text-xs text-amber-600/50 mt-2">La première génération peut prendre un moment...</p>
-      </div>
-    );
-  }
+  const isLoading = loadingJour > 0;
 
   // ─── Erreur ───
-  if (erreur) {
+  if (erreur && !menu) {
     return (
       <div className="w-full max-w-lg mx-auto px-4 flex flex-col items-center justify-center min-h-[60vh] gap-4">
         <p className="text-4xl">😕</p>
@@ -294,7 +277,22 @@ function MaSemaine() {
     );
   }
 
-  if (!menu) return null;
+  if (!menu || Object.keys(menu).length === 0) {
+    if (!isLoading) return null;
+    // Premier chargement : afficher un écran d'attente initial
+    return (
+      <div className="w-full max-w-lg mx-auto px-4 flex flex-col items-center justify-center min-h-[60vh]">
+        <div className="relative mb-6">
+          <div className="w-16 h-16 rounded-full border-4 border-amber-100 border-t-amber-500 animate-spin" />
+          <div className="absolute inset-0 flex items-center justify-center text-xl">📅</div>
+        </div>
+        <p className="text-base font-bold text-amber-800 animate-pulse text-center">
+          🍳 Préparation de tes menus...
+        </p>
+        <p className="text-xs text-amber-600/50 mt-2">Les 7 jours arrivent en parallèle !</p>
+      </div>
+    );
+  }
 
   const jourData = menu[jourActif];
 
@@ -337,6 +335,9 @@ function MaSemaine() {
       {/* ─── Sélecteur de jours (scroll horizontal) ─── */}
       <div className="flex gap-1.5 mb-6 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide">
         {JOURS.map((jour) => {
+          const jourCharge = !!menu[jour.num];
+          const enChargement = isLoading && !jourCharge;
+
           // Compter les sélections pour ce jour
           let nbSelect = 0;
           if (menu[jour.num]) {
@@ -352,25 +353,34 @@ function MaSemaine() {
           return (
             <button
               key={jour.num}
-              onClick={() => setJourActif(jour.num)}
+              onClick={() => jourCharge && setJourActif(jour.num)}
+              disabled={!jourCharge && !enChargement}
               className={`flex flex-col items-center shrink-0 w-14 py-2.5 rounded-2xl transition-all duration-300 ${
-                isActif
-                  ? "bg-amber-500 text-white shadow-lg shadow-amber-200"
-                  : isComplet
-                    ? "bg-green-50 text-green-700 border border-green-200"
-                    : "bg-gray-50 text-gray-500 hover:bg-gray-100"
+                enChargement
+                  ? "bg-amber-100 text-amber-600 border border-amber-300 animate-pulse"
+                  : isActif
+                    ? "bg-amber-500 text-white shadow-lg shadow-amber-200"
+                    : isComplet
+                      ? "bg-green-50 text-green-700 border border-green-200"
+                      : jourCharge
+                        ? "bg-gray-50 text-gray-500 hover:bg-gray-100"
+                        : "bg-gray-50 text-gray-300 opacity-50"
               }`}
             >
               <span className={`text-[10px] font-bold ${isActif ? "text-amber-100" : ""}`}>
                 {jour.short}
               </span>
-              <span className={`text-sm font-black ${isActif ? "" : ""}`}>
-                {jour.num}
-              </span>
-              {isComplet && !isActif && (
+              {enChargement ? (
+                <span className="text-xs mt-0.5">⏳</span>
+              ) : (
+                <span className={`text-sm font-black`}>
+                  {jour.num}
+                </span>
+              )}
+              {isComplet && !isActif && !enChargement && (
                 <span className="text-[8px] mt-0.5">✅</span>
               )}
-              {!isComplet && (
+              {!isComplet && jourCharge && !enChargement && (
                 <span className={`text-[8px] mt-0.5 ${isActif ? "text-amber-200" : "text-gray-300"}`}>
                   {nbSelect}/4
                 </span>
@@ -379,6 +389,16 @@ function MaSemaine() {
           );
         })}
       </div>
+
+      {/* ─── Indicateur de chargement progressif ─── */}
+      {isLoading && (
+        <div className="mb-4 p-3 bg-amber-50 rounded-2xl border border-amber-100 flex items-center gap-3">
+          <div className="w-5 h-5 rounded-full border-2 border-amber-200 border-t-amber-500 animate-spin shrink-0" />
+          <p className="text-sm font-bold text-amber-700">
+            Chargement des menus... ({Object.keys(menu).length}/7)
+          </p>
+        </div>
+      )}
 
       {/* ─── Repas du jour sélectionné ─── */}
       <div className="space-y-6">

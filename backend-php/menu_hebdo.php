@@ -291,12 +291,19 @@ function formaterRecettePourStockage($recipe, $calories) {
 // ═══════════════════════════════════════════════════════
 
 if ($action === 'generer') {
-    $semaine = $_REQUEST['semaine'] ?? date('o-\WW'); // Semaine courante par défaut
+    $semaine = $_REQUEST['semaine'] ?? date('o-\WW');
+    $jourDemande = isset($_REQUEST['jour']) ? (int)$_REQUEST['jour'] : null; // V3 : générer un seul jour (AJAX progressif)
 
     // Valider le format de la semaine (ex: 2026-W12)
     if (!preg_match('/^\d{4}-W\d{2}$/', $semaine)) {
         http_response_code(400);
         echo json_encode(["error" => "Format de semaine invalide. Utilisez YYYY-Wxx (ex: 2026-W12)"]);
+        exit;
+    }
+
+    if ($jourDemande !== null && ($jourDemande < 1 || $jourDemande > 7)) {
+        http_response_code(400);
+        echo json_encode(["error" => "Jour invalide (1-7)"]);
         exit;
     }
 
@@ -315,13 +322,76 @@ if ($action === 'generer') {
     $diet = $profil['diet'] ?? '';
     if ($diet === 'classique') $diet = '';
 
-    // Vérifier si le menu existe déjà pour cette semaine
+    // ─── Mode jour unique (AJAX progressif) ───
+    if ($jourDemande !== null) {
+        // Vérifier si ce jour existe déjà en BDD
+        $stmt = $pdo->prepare("SELECT type_repas, choix_json, selection_index FROM menu_hebdomadaire WHERE utilisateur_id = ? AND semaine = ? AND jour = ?");
+        $stmt->execute([$userId, $semaine, $jourDemande]);
+        $existants = $stmt->fetchAll();
+
+        if (count($existants) === 4) {
+            // Jour déjà généré → renvoyer depuis la BDD
+            $jourMenu = [];
+            foreach ($existants as $row) {
+                $jourMenu[$row['type_repas']] = [
+                    'choix'     => json_decode($row['choix_json'], true),
+                    'selection' => $row['selection_index'] !== null ? (int)$row['selection_index'] : null,
+                ];
+            }
+            echo json_encode([
+                "success" => true,
+                "semaine" => $semaine,
+                "jour"    => $jourDemande,
+                "menu"    => $jourMenu,
+                "source"  => "bdd",
+            ]);
+            exit;
+        }
+
+        // Générer ce jour
+        $jourMenu = [];
+        foreach ($TYPES_REPAS as $type) {
+            $calRepas = round($totalCalories * $REPARTITION[$type]);
+            $recettesRaw = obtenirChoixRecettes($type, $calRepas, $apiKey, $diet, $cacheDir, $quotaLockFile, $NB_CHOIX);
+
+            $choix = [];
+            foreach ($recettesRaw as $recette) {
+                $formatted = formaterRecettePourStockage($recette, $calRepas);
+                if (($recette['source'] ?? '') !== 'fallback' && !isset($recette['title_fr'])) {
+                    $formatted = traduireRecette($formatted);
+                }
+                $choix[] = $formatted;
+            }
+
+            $jourMenu[$type] = [
+                'choix'     => $choix,
+                'selection' => null,
+            ];
+
+            $stmt = $pdo->prepare("
+                INSERT INTO menu_hebdomadaire (utilisateur_id, semaine, jour, type_repas, choix_json, selection_index)
+                VALUES (?, ?, ?, ?, ?, NULL)
+                ON DUPLICATE KEY UPDATE choix_json = VALUES(choix_json), selection_index = NULL, updated_at = NOW()
+            ");
+            $stmt->execute([$userId, $semaine, $jourDemande, $type, json_encode($choix)]);
+        }
+
+        echo json_encode([
+            "success" => true,
+            "semaine" => $semaine,
+            "jour"    => $jourDemande,
+            "menu"    => $jourMenu,
+            "source"  => "nouveau",
+        ]);
+        exit;
+    }
+
+    // ─── Mode semaine complète (legacy, fallback) ───
     $stmt = $pdo->prepare("SELECT jour, type_repas, choix_json, selection_index FROM menu_hebdomadaire WHERE utilisateur_id = ? AND semaine = ?");
     $stmt->execute([$userId, $semaine]);
     $existants = $stmt->fetchAll();
 
     if (count($existants) === 28) {
-        // Menu complet : 7 jours × 4 repas = 28 lignes
         $menu = [];
         foreach ($existants as $row) {
             $jour = (int)$row['jour'];
@@ -340,23 +410,17 @@ if ($action === 'generer') {
         exit;
     }
 
-    // Générer le menu pour les 7 jours
+    // Générer les 7 jours d'un coup
     $menu = [];
-
     for ($jour = 1; $jour <= 7; $jour++) {
         $menu[$jour] = [];
-
         foreach ($TYPES_REPAS as $type) {
             $calRepas = round($totalCalories * $REPARTITION[$type]);
-
-            // Obtenir 4 choix
             $recettesRaw = obtenirChoixRecettes($type, $calRepas, $apiKey, $diet, $cacheDir, $quotaLockFile, $NB_CHOIX);
 
-            // Formater et traduire
             $choix = [];
             foreach ($recettesRaw as $recette) {
                 $formatted = formaterRecettePourStockage($recette, $calRepas);
-                // Traduire sauf fallback
                 if (($recette['source'] ?? '') !== 'fallback' && !isset($recette['title_fr'])) {
                     $formatted = traduireRecette($formatted);
                 }
@@ -368,7 +432,6 @@ if ($action === 'generer') {
                 'selection' => null,
             ];
 
-            // Sauvegarder en BDD (INSERT ... ON DUPLICATE KEY UPDATE)
             $stmt = $pdo->prepare("
                 INSERT INTO menu_hebdomadaire (utilisateur_id, semaine, jour, type_repas, choix_json, selection_index)
                 VALUES (?, ?, ?, ?, ?, NULL)
