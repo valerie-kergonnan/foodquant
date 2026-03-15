@@ -5,6 +5,7 @@ import MaJournee from './components/MaJournee';
 import NavBar from './components/NavBar';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
+import MaSemaine from './components/MaSemaine';
 import Footer from './components/Footer';
 
 const API_URL = 'https://foodquant-production.up.railway.app';
@@ -274,7 +275,7 @@ function App() {
 
   // ─── Déterminer si le footer doit s'afficher ───
   // Le footer s'affiche sur toutes les pages sauf pendant le chargement
-  const afficherFooter = page === 'accueil' || page === 'login' || page === 'profil' || page === 'majournee' || page === 'dashboard';
+  const afficherFooter = page === 'accueil' || page === 'login' || page === 'profil' || page === 'majournee' || page === 'masemaine' || page === 'dashboard';
 
   return (
     <>
@@ -302,7 +303,7 @@ function App() {
           .animate-toastIn { animation: toastIn 0.4s ease-out; }
         `}</style>
 
-        {/* ─── V3 Responsive : Contenu principal avec flex-grow ───
+        {/* ─── V3 Responsive : Contenu principal avec grow ───
              pt-20 compense la NavBar fixe en haut (~80px)
              pb-6 padding bas normal (plus de NavBar en bas)          */}
         <main className="grow flex flex-col items-center p-4 pt-20 sm:p-6 sm:pt-20">
@@ -347,6 +348,19 @@ function App() {
                 <p className="text-gray-500 text-lg">Aucun repas généré</p>
                 <button onClick={() => setPage("profil")} className="bg-amber-500 text-white font-bold py-3 px-6 rounded-2xl hover:-translate-y-1 transition-all">
                   ✏️ Remplir mon profil
+                </button>
+              </div>
+            )
+          )}
+
+          {page === "masemaine" && (
+            user ? (
+              <MaSemaine />
+            ) : (
+              <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
+                <p className="text-gray-500 text-lg">Connecte-toi pour planifier ta semaine</p>
+                <button onClick={() => setPage("login")} className="bg-amber-500 text-white font-bold py-3 px-6 rounded-2xl">
+                  🔑 Se connecter
                 </button>
               </div>
             )

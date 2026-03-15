@@ -2,6 +2,7 @@ function NavBar({ pageActive, onChangePage, isLoggedIn, onLogout }) {
   const onglets = [
     { id: "accueil", label: "Accueil", icone: "🏠" },
     { id: "majournee", label: "Ma Journée", icone: "📅" },
+    { id: "masemaine", label: "Semaine", icone: "🗓️" },
     { id: "dashboard", label: "Stats", icone: "📊" },
     { id: isLoggedIn ? "profil" : "login", label: isLoggedIn ? "Profil" : "Connexion", icone: isLoggedIn ? "👤" : "🔑" },
   ];
