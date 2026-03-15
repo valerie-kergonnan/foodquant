@@ -648,7 +648,7 @@ function MaJournee({ recipes, nutrients, besoins, onRefreshRecipe, onEditProfil 
 
                   <div className="grid grid-cols-2 gap-3">
                     <a
-                      href={repas.donnee.sourceUrl || `https://spoonacular.com/recipes/${repas.donnee.id}`}
+                      href={`https://www.marmiton.org/recettes/recherche.aspx?aqt=${encodeURIComponent(repas.donnee.title_fr || repas.donnee.title)}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="bg-gray-50 hover:bg-gray-100 text-gray-600 font-bold py-3 rounded-2xl text-center text-sm transition-all"
