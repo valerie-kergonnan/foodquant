@@ -597,11 +597,18 @@ function MaJournee({ recipes, nutrients, besoins, onRefreshRecipe, onEditProfil 
 
               <div className={`overflow-hidden bg-white rounded-[2.5rem] shadow-lg border border-gray-100 transition-all duration-300 hover:-translate-y-2 ${isRefreshing ? 'opacity-50 scale-95' : ''}`}>
                 <div className="h-52 overflow-hidden relative">
-                  <img
-                    src={repas.donnee.image}
-                    alt={repas.donnee.title_fr || repas.donnee.title}
-                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-                  />
+                  {repas.donnee.source === 'local_fr' ? (
+                    <div className="w-full h-full bg-linear-to-br from-amber-50 to-orange-100 flex flex-col items-center justify-center">
+                      <span className="text-6xl mb-2">{repas.emoji}</span>
+                      <span className="text-sm font-bold text-amber-700/60">Recette maison</span>
+                    </div>
+                  ) : (
+                    <img
+                      src={repas.donnee.image}
+                      alt={repas.donnee.title_fr || repas.donnee.title}
+                      className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                    />
+                  )}
                   {isRefreshing && (
                     <div className="absolute inset-0 bg-white/60 flex items-center justify-center">
                       <div className="w-10 h-10 rounded-full border-3 border-amber-200 border-t-amber-500 animate-spin" />

@@ -53,12 +53,18 @@ function CarteRecette({ recette, isSelected, onSelect, petit = false }) {
       }`}
     >
       <div className="relative">
-        <img
-          src={recette.image}
-          alt={titre}
-          className={`w-full object-cover ${petit ? "h-24" : "h-32"}`}
-          loading="lazy"
-        />
+        {recette.source === 'local_fr' ? (
+          <div className={`w-full bg-linear-to-br from-amber-50 to-orange-100 flex items-center justify-center ${petit ? "h-24" : "h-32"}`}>
+            <span className="text-3xl">🍽️</span>
+          </div>
+        ) : (
+          <img
+            src={recette.image}
+            alt={titre}
+            className={`w-full object-cover ${petit ? "h-24" : "h-32"}`}
+            loading="lazy"
+          />
+        )}
         {isSelected && (
           <div className="absolute top-2 right-2 w-7 h-7 bg-amber-500 rounded-full flex items-center justify-center shadow-lg">
             <span className="text-white text-xs font-bold">✓</span>
@@ -509,7 +515,7 @@ function ModalCoursesHebdo({ semaine, onClose }) {
       }
     };
     charger();
-    
+   
   }, [semaine]);
 
   const toggleCoche = (idx) => {
