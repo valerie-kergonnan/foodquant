@@ -59,16 +59,214 @@ const BarreNutriment = ({ label, valeur, objectif, unite, couleur = "bg-amber-40
   );
 };
 
-// ─── V2 : Modale Liste de Courses ───
-const ModalListeCourses = ({ recipes, onClose }) => {
-  // Extraire tous les ingrédients de toutes les recettes
-  const tousIngredients = [];
+// ═══════════════════════════════════════════════════════════════
+// V3 : SYSTÈME INTELLIGENT DE LISTE DE COURSES
+// - Parse les quantités depuis les textes d'ingrédients
+// - Cumule les ingrédients identiques
+// - Arrondit à des quantités réalistes pour les courses
+// ═══════════════════════════════════════════════════════════════
+
+// Dictionnaire d'unités reconnues (avec alias)
+const UNITES_CONNUES = {
+  // Poids
+  'g': 'g', 'gr': 'g', 'gram': 'g', 'grams': 'g', 'gramme': 'g', 'grammes': 'g',
+  'kg': 'kg', 'kilo': 'kg', 'kilos': 'kg', 'kilogram': 'kg', 'kilogramme': 'kg',
+  'oz': 'oz', 'ounce': 'oz', 'ounces': 'oz',
+  'lb': 'lb', 'lbs': 'lb', 'pound': 'lb', 'pounds': 'lb',
+  // Volume
+  'ml': 'ml', 'millilitre': 'ml', 'millilitres': 'ml', 'milliliter': 'ml',
+  'cl': 'cl', 'centilitre': 'cl', 'centilitres': 'cl',
+  'l': 'L', 'litre': 'L', 'litres': 'L', 'liter': 'L', 'liters': 'L',
+  'cup': 'tasse', 'cups': 'tasse', 'tasse': 'tasse', 'tasses': 'tasse',
+  'tbsp': 'c.à.s', 'tablespoon': 'c.à.s', 'tablespoons': 'c.à.s',
+  'c.à.s': 'c.à.s', 'cas': 'c.à.s', 'cuillère à soupe': 'c.à.s', 'cuillères à soupe': 'c.à.s',
+  'tsp': 'c.à.c', 'teaspoon': 'c.à.c', 'teaspoons': 'c.à.c',
+  'c.à.c': 'c.à.c', 'cac': 'c.à.c', 'cuillère à café': 'c.à.c', 'cuillères à café': 'c.à.c',
+  // Pièces
+  'pièce': 'pièce', 'pièces': 'pièce', 'piece': 'pièce',
+  'tranche': 'tranche', 'tranches': 'tranche', 'slice': 'tranche', 'slices': 'tranche',
+  'gousse': 'gousse', 'gousses': 'gousse', 'clove': 'gousse', 'cloves': 'gousse',
+  'feuille': 'feuille', 'feuilles': 'feuille', 'leaf': 'feuille', 'leaves': 'feuille',
+  'brin': 'brin', 'brins': 'brin', 'sprig': 'brin', 'sprigs': 'brin',
+  'boîte': 'boîte', 'boîtes': 'boîte', 'can': 'boîte', 'cans': 'boîte',
+  'sachet': 'sachet', 'sachets': 'sachet', 'packet': 'sachet', 'packets': 'sachet',
+  'bunch': 'botte', 'botte': 'botte', 'bottes': 'botte',
+  'pinch': 'pincée', 'pincée': 'pincée', 'pincées': 'pincée',
+  'dash': 'trait', 'trait': 'trait',
+  'handful': 'poignée', 'poignée': 'poignée', 'poignées': 'poignée',
+};
+
+// Ingrédients qui se comptent en pièces entières (pas de 0.7 œuf)
+const INGREDIENTS_ENTIERS = [
+  'oeuf', 'œuf', 'egg', 'oignon', 'onion', 'ail', 'garlic', 'tomate', 'tomato',
+  'pomme', 'apple', 'banane', 'banana', 'citron', 'lemon', 'lime', 'orange',
+  'avocat', 'avocado', 'poivron', 'pepper', 'concombre', 'cucumber',
+  'carotte', 'carrot', 'pomme de terre', 'potato', 'courgette', 'zucchini',
+  'aubergine', 'eggplant', 'patate douce', 'sweet potato',
+];
+
+// Parse un texte d'ingrédient → { quantite, unite, nom }
+function parseIngredient(texte) {
+  if (!texte || typeof texte !== 'string') return { quantite: null, unite: '', nom: texte || '' };
+
+  let t = texte.trim();
+
+  // Pattern : "2.5 g de poulet" ou "3 œufs" ou "1/2 tasse de farine" ou "100g poulet"
+  // Gère les fractions (1/2, 3/4), les décimaux (2.5), les nombres collés à l'unité (100g)
+  const regexQuantite = /^(\d+\s*\/\s*\d+|\d+[.,]\d+|\d+)\s*/;
+  const match = t.match(regexQuantite);
+
+  let quantite = null;
+  let reste = t;
+
+  if (match) {
+    const qStr = match[1].replace(',', '.');
+    if (qStr.includes('/')) {
+      const [num, den] = qStr.split('/').map(s => parseFloat(s.trim()));
+      quantite = den !== 0 ? num / den : null;
+    } else {
+      quantite = parseFloat(qStr);
+    }
+    reste = t.slice(match[0].length).trim();
+  }
+
+  // Chercher l'unité au début du reste
+  let unite = '';
+  let nom = reste;
+
+  // Tester les unités multi-mots d'abord (cuillère à soupe, etc.)
+  const unitesTriees = Object.keys(UNITES_CONNUES).sort((a, b) => b.length - a.length);
+  for (const u of unitesTriees) {
+    const regex = new RegExp(`^${u.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*(?:de\\s+|d')?`, 'i');
+    if (regex.test(reste)) {
+      unite = UNITES_CONNUES[u.toLowerCase()] || u;
+      nom = reste.replace(regex, '').trim();
+      break;
+    }
+  }
+
+  // Nettoyer le nom : retirer "de " au début
+  nom = nom.replace(/^de\s+/i, '').replace(/^d'/i, '').trim();
+
+  // Si pas de nom trouvé, garder le texte original
+  if (!nom) nom = texte.trim();
+
+  return { quantite, unite, nom };
+}
+
+// Normalise un nom d'ingrédient pour le regroupement
+function normaliserNom(nom) {
+  return nom
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // retirer accents
+    .replace(/[^a-z0-9\s]/g, '') // retirer ponctuation
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Arrondit une quantité à une valeur réaliste pour les courses
+function arrondirPourCourses(quantite, unite, nom) {
+  if (quantite === null || quantite === 0) return quantite;
+
+  const nomLower = nom.toLowerCase();
+
+  // Ingrédients entiers → arrondi supérieur à l'entier
+  const estEntier = INGREDIENTS_ENTIERS.some(ie => nomLower.includes(ie));
+  if (estEntier || unite === 'pièce') {
+    return Math.ceil(quantite);
+  }
+
+  // Petites mesures (c.à.c, c.à.s, pincée) → arrondi au 0.5 supérieur
+  if (['c.à.c', 'c.à.s', 'pincée', 'trait'].includes(unite)) {
+    return Math.ceil(quantite * 2) / 2;
+  }
+
+  // Grammes
+  if (unite === 'g') {
+    if (quantite <= 10) return Math.ceil(quantite);        // 7g → 7g (épices)
+    if (quantite <= 50) return Math.ceil(quantite / 5) * 5; // 23g → 25g
+    if (quantite <= 200) return Math.ceil(quantite / 10) * 10; // 183g → 190g
+    return Math.ceil(quantite / 50) * 50;                    // 340g → 350g
+  }
+
+  // Kilogrammes → arrondi au 0.1 supérieur
+  if (unite === 'kg') {
+    return Math.ceil(quantite * 10) / 10;
+  }
+
+  // Millilitres
+  if (unite === 'ml') {
+    if (quantite <= 50) return Math.ceil(quantite / 5) * 5;   // 7ml → 10ml
+    if (quantite <= 200) return Math.ceil(quantite / 10) * 10; // 183ml → 190ml
+    return Math.ceil(quantite / 50) * 50;                       // 340ml → 350ml
+  }
+
+  // Centilitres → arrondi au 5cl
+  if (unite === 'cl') {
+    if (quantite <= 10) return Math.ceil(quantite);
+    return Math.ceil(quantite / 5) * 5;
+  }
+
+  // Litres → arrondi au 0.25L
+  if (unite === 'L') {
+    return Math.ceil(quantite * 4) / 4;
+  }
+
+  // Tasses → arrondi au 0.25
+  if (unite === 'tasse') {
+    return Math.ceil(quantite * 4) / 4;
+  }
+
+  // Tranches, gousses, feuilles, boîtes → entier supérieur
+  if (['tranche', 'gousse', 'feuille', 'brin', 'boîte', 'sachet', 'botte', 'poignée'].includes(unite)) {
+    return Math.ceil(quantite);
+  }
+
+  // Oz, lb → arrondi au 0.5
+  if (['oz', 'lb'].includes(unite)) {
+    return Math.ceil(quantite * 2) / 2;
+  }
+
+  // Par défaut → arrondi à 1 décimale supérieure
+  return Math.ceil(quantite * 10) / 10;
+}
+
+// Formate une quantité pour l'affichage
+function formaterQuantite(quantite, unite) {
+  if (quantite === null) return '';
+
+  // Affichage propre : pas de ".0" inutile
+  let qStr;
+  if (Number.isInteger(quantite)) {
+    qStr = quantite.toString();
+  } else if (quantite === 0.25) {
+    qStr = '¼';
+  } else if (quantite === 0.5) {
+    qStr = '½';
+  } else if (quantite === 0.75) {
+    qStr = '¾';
+  } else {
+    qStr = quantite.toFixed(1).replace('.0', '');
+  }
+
+  if (unite) {
+    // Pluriel simple pour les unités françaises
+    const pluriels = { 'tasse': 'tasses', 'tranche': 'tranches', 'gousse': 'gousses', 'feuille': 'feuilles', 'brin': 'brins', 'boîte': 'boîtes', 'sachet': 'sachets', 'botte': 'bottes', 'pièce': 'pièces', 'pincée': 'pincées', 'poignée': 'poignées' };
+    const uniteAffichee = (quantite > 1 && pluriels[unite]) ? pluriels[unite] : unite;
+    return `${qStr} ${uniteAffichee}`;
+  }
+
+  return qStr;
+}
+
+// Traite tous les ingrédients : parse, cumule, arrondit
+function traiterIngredientsIntellligent(recipes) {
   const repasLabels = ["Petit-déjeuner", "Déjeuner", "Collation", "Dîner"];
+  const cumul = {}; // clé normalisée → { quantite, unite, nomOriginal, repas[] }
 
   recipes.forEach((recette, index) => {
     if (!recette) return;
 
-    // Priorité : ingredients_fr (traduits), sinon extendedIngredients, sinon nutrition.ingredients
     let ingredients = [];
 
     if (recette.ingredients_fr && recette.ingredients_fr.length > 0) {
@@ -84,27 +282,65 @@ const ModalListeCourses = ({ recipes, onClose }) => {
       });
     }
 
-    ingredients.forEach(ing => {
-      if (ing && ing.trim()) {
-        tousIngredients.push({
-          texte: ing.trim(),
-          repas: repasLabels[index],
-          id: `${index}-${ing.trim()}`
-        });
+    ingredients.forEach(texteIng => {
+      if (!texteIng || !texteIng.trim()) return;
+
+      const { quantite, unite, nom } = parseIngredient(texteIng.trim());
+      const cle = normaliserNom(nom);
+
+      if (!cle) return;
+
+      if (cumul[cle]) {
+        // Cumuler la quantité si même unité (ou sans unité)
+        if (quantite !== null && cumul[cle].quantite !== null && cumul[cle].unite === unite) {
+          cumul[cle].quantite += quantite;
+        } else if (quantite !== null && cumul[cle].quantite === null) {
+          cumul[cle].quantite = quantite;
+          cumul[cle].unite = unite;
+        }
+        // Ajouter le repas d'origine
+        if (!cumul[cle].repas.includes(repasLabels[index])) {
+          cumul[cle].repas.push(repasLabels[index]);
+        }
+      } else {
+        cumul[cle] = {
+          quantite,
+          unite,
+          nomOriginal: nom,
+          repas: [repasLabels[index]],
+        };
       }
     });
   });
 
-  // Dédupliquer par texte (en minuscule)
-  const ingredientsUniques = [];
-  const vus = new Set();
-  tousIngredients.forEach(ing => {
-    const cle = ing.texte.toLowerCase();
-    if (!vus.has(cle)) {
-      vus.add(cle);
-      ingredientsUniques.push(ing);
-    }
+  // Arrondir et formater
+  const resultat = Object.entries(cumul).map(([cle, data]) => {
+    const qArrondie = arrondirPourCourses(data.quantite, data.unite, data.nomOriginal);
+    const texteQuantite = formaterQuantite(qArrondie, data.unite);
+    const texteComplet = texteQuantite
+      ? `${texteQuantite} ${data.nomOriginal}`
+      : data.nomOriginal;
+
+    return {
+      id: cle,
+      texte: texteComplet.charAt(0).toUpperCase() + texteComplet.slice(1),
+      repas: data.repas.join(', '),
+      nbRepas: data.repas.length,
+    };
   });
+
+  // Trier : ingrédients utilisés dans plusieurs repas en premier, puis alphabétique
+  resultat.sort((a, b) => {
+    if (b.nbRepas !== a.nbRepas) return b.nbRepas - a.nbRepas;
+    return a.texte.localeCompare(b.texte, 'fr');
+  });
+
+  return resultat;
+}
+
+// ─── V3 : Modale Liste de Courses (intelligente) ───
+const ModalListeCourses = ({ recipes, onClose }) => {
+  const ingredientsTraites = traiterIngredientsIntellligent(recipes);
 
   const [coches, setCoches] = useState({});
   const [copie, setCopie] = useState(false);
@@ -114,7 +350,7 @@ const ModalListeCourses = ({ recipes, onClose }) => {
   };
 
   const copierListe = () => {
-    const texte = ingredientsUniques
+    const texte = ingredientsTraites
       .map(ing => `${coches[ing.id] ? '✅' : '⬜'} ${ing.texte}`)
       .join('\n');
     navigator.clipboard.writeText(texte).then(() => {
@@ -137,7 +373,7 @@ const ModalListeCourses = ({ recipes, onClose }) => {
           <div>
             <h2 className="text-xl font-black text-gray-800">🛒 Liste de courses</h2>
             <p className="text-xs text-gray-400 mt-1">
-              {ingredientsUniques.length} ingrédient{ingredientsUniques.length > 1 ? 's' : ''}
+              {ingredientsTraites.length} ingrédient{ingredientsTraites.length > 1 ? 's' : ''}
               {nbCoches > 0 && ` · ${nbCoches} coché${nbCoches > 1 ? 's' : ''}`}
             </p>
           </div>
@@ -151,14 +387,14 @@ const ModalListeCourses = ({ recipes, onClose }) => {
 
         {/* Liste des ingrédients */}
         <div className="flex-1 overflow-y-auto p-5 space-y-2">
-          {ingredientsUniques.length === 0 ? (
+          {ingredientsTraites.length === 0 ? (
             <div className="text-center py-8">
               <p className="text-3xl mb-3">📝</p>
               <p className="text-gray-400 text-sm">Aucun ingrédient disponible.</p>
               <p className="text-gray-300 text-xs mt-1">Les ingrédients apparaîtront après génération d'un nouveau menu.</p>
             </div>
           ) : (
-            ingredientsUniques.map((ing) => (
+            ingredientsTraites.map((ing) => (
               <button
                 key={ing.id}
                 onClick={() => toggleCoche(ing.id)}
@@ -182,7 +418,7 @@ const ModalListeCourses = ({ recipes, onClose }) => {
                 }`}>
                   {ing.texte}
                 </span>
-                <span className="text-[10px] text-gray-300 font-medium shrink-0">
+                <span className="text-[10px] text-gray-300 font-medium shrink-0 max-w-20 text-right">
                   {ing.repas}
                 </span>
               </button>
@@ -191,7 +427,7 @@ const ModalListeCourses = ({ recipes, onClose }) => {
         </div>
 
         {/* Footer actions */}
-        {ingredientsUniques.length > 0 && (
+        {ingredientsTraites.length > 0 && (
           <div className="p-5 border-t border-gray-100 flex gap-3 shrink-0">
             <button
               onClick={copierListe}
@@ -438,7 +674,7 @@ function MaJournee({ recipes, nutrients, besoins, onRefreshRecipe, onEditProfil 
         })}
       </div>
 
-      {/* ─── V2 : Modale liste de courses ─── */}
+      {/* ─── V3 : Modale liste de courses intelligente ─── */}
       {showListeCourses && (
         <ModalListeCourses
           recipes={recipes}
