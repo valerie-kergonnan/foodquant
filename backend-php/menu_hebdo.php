@@ -490,8 +490,144 @@ if ($action === 'courses') {
 
 
 // ═══════════════════════════════════════════════════════
+// ACTION : VALIDER (injecte les repas dans historique_repas pour le Dashboard)
+// ═══════════════════════════════════════════════════════
+
+if ($action === 'valider') {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        http_response_code(405);
+        echo json_encode(["error" => "Méthode POST requise"]);
+        exit;
+    }
+
+    $body = json_decode(file_get_contents('php://input'), true);
+    $semaine = $body['semaine'] ?? '';
+
+    if (!preg_match('/^\d{4}-W\d{2}$/', $semaine)) {
+        http_response_code(400);
+        echo json_encode(["error" => "Format de semaine invalide"]);
+        exit;
+    }
+
+    // Récupérer tous les repas avec une sélection pour cette semaine
+    $stmt = $pdo->prepare("
+        SELECT jour, type_repas, choix_json, selection_index 
+        FROM menu_hebdomadaire 
+        WHERE utilisateur_id = ? AND semaine = ? AND selection_index IS NOT NULL
+        ORDER BY jour ASC
+    ");
+    $stmt->execute([$userId, $semaine]);
+    $rows = $stmt->fetchAll();
+
+    if (count($rows) === 0) {
+        http_response_code(400);
+        echo json_encode(["error" => "Aucun repas sélectionné pour cette semaine"]);
+        exit;
+    }
+
+    // Regrouper par jour
+    $parJour = [];
+    foreach ($rows as $row) {
+        $jour = (int)$row['jour'];
+        $choix = json_decode($row['choix_json'], true);
+        $selIdx = (int)$row['selection_index'];
+        if (isset($choix[$selIdx])) {
+            $parJour[$jour][] = $choix[$selIdx];
+        }
+    }
+
+    // Calculer la date réelle de chaque jour de la semaine
+    // Semaine ISO → date du lundi
+    preg_match('/^(\d{4})-W(\d{2})$/', $semaine, $m);
+    $year = (int)$m[1];
+    $week = (int)$m[2];
+    $lundi = new DateTime();
+    $lundi->setISODate($year, $week, 1); // 1 = lundi
+
+    $joursInjectes = 0;
+    $erreurs = [];
+
+    foreach ($parJour as $numJour => $recettes) {
+        // Calculer la date du jour
+        $dateJour = clone $lundi;
+        $dateJour->modify('+' . ($numJour - 1) . ' days');
+        $dateStr = $dateJour->format('Y-m-d');
+
+        // Calculer les totaux nutritionnels
+        $totalCal = 0;
+        $totalProt = 0;
+        $recettesLegeres = [];
+
+        foreach ($recettes as $r) {
+            $cal = 0;
+            $prot = 0;
+            $fat = 0;
+            $carbs = 0;
+
+            if (isset($r['nutrition']['nutrients'])) {
+                foreach ($r['nutrition']['nutrients'] as $n) {
+                    switch ($n['name']) {
+                        case 'Calories': $cal = round($n['amount']); break;
+                        case 'Protein': $prot = round($n['amount']); break;
+                        case 'Fat': $fat = round($n['amount']); break;
+                        case 'Carbohydrates': $carbs = round($n['amount']); break;
+                    }
+                }
+            }
+
+            $totalCal += $cal;
+            $totalProt += $prot;
+
+            $recettesLegeres[] = [
+                'id'       => $r['id'] ?? 0,
+                'title'    => $r['title'] ?? '',
+                'title_fr' => $r['title_fr'] ?? $r['title'] ?? '',
+                'image'    => $r['image'] ?? '',
+                'sourceUrl' => $r['sourceUrl'] ?? '',
+                'calories' => $cal,
+                'protein'  => $prot,
+                'fat'      => $fat,
+                'carbs'    => $carbs,
+            ];
+        }
+
+        // Insérer dans historique_repas (ON DUPLICATE KEY UPDATE pour ne pas écraser)
+        try {
+            $stmt = $pdo->prepare("
+                INSERT INTO historique_repas (utilisateur_id, date_repas, recettes_json, total_calories, total_proteines, created_at)
+                VALUES (?, ?, ?, ?, ?, NOW())
+                ON DUPLICATE KEY UPDATE 
+                    recettes_json = VALUES(recettes_json),
+                    total_calories = VALUES(total_calories),
+                    total_proteines = VALUES(total_proteines)
+            ");
+            $stmt->execute([
+                $userId,
+                $dateStr,
+                json_encode($recettesLegeres),
+                $totalCal,
+                $totalProt,
+            ]);
+            $joursInjectes++;
+        } catch (PDOException $e) {
+            $erreurs[] = "Jour $numJour ($dateStr) : " . $e->getMessage();
+        }
+    }
+
+    echo json_encode([
+        "success"       => true,
+        "message"       => "$joursInjectes jour(s) sauvegardé(s) dans l'historique",
+        "jours_injectes" => $joursInjectes,
+        "semaine"       => $semaine,
+        "erreurs"       => $erreurs,
+    ]);
+    exit;
+}
+
+
+// ═══════════════════════════════════════════════════════
 // ACTION INCONNUE
 // ═══════════════════════════════════════════════════════
 
 http_response_code(400);
-echo json_encode(["error" => "Action inconnue. Actions disponibles : generer, selectionner, courses"]);
+echo json_encode(["error" => "Action inconnue. Actions disponibles : generer, selectionner, courses, valider"]);

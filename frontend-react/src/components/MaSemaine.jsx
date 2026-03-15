@@ -86,6 +86,10 @@ function MaSemaine() {
   const [jourActif, setJourActif] = useState(new Date().getDay() || 7); // 1-7, lundi=1
   const [saving, setSaving] = useState(null); // "jour-type" en cours de sauvegarde
   const [loadingMessage, setLoadingMessage] = useState("");
+  const [showCourses, setShowCourses] = useState(false);
+  const [validationLoading, setValidationLoading] = useState(false);
+  const [validationOk, setValidationOk] = useState(false);
+  const [validationErreur, setValidationErreur] = useState("");
 
   const messages = [
     "🍳 Préparation de tes menus...",
@@ -191,6 +195,37 @@ function MaSemaine() {
     const nouvelleSemaine = `${d.getFullYear()}-W${String(newWeek).padStart(2, "0")}`;
     setSemaine(nouvelleSemaine);
     setMenu(null);
+    setValidationOk(false);
+    setValidationErreur("");
+  };
+
+  // ─── Valider la semaine (injecte dans historique_repas) ───
+  const validerSemaine = async () => {
+    setValidationLoading(true);
+    setValidationErreur("");
+
+    try {
+      const res = await fetch(`${API_URL}/menu_hebdo.php?action=valider`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ semaine }),
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        setValidationOk(true);
+        setTimeout(() => setValidationOk(false), 4000);
+      } else {
+        setValidationErreur(`❌ ${data.error || "Erreur lors de la validation"}`);
+        setTimeout(() => setValidationErreur(""), 4000);
+      }
+    } catch {
+      setValidationErreur("❌ Impossible de valider. Vérifie ta connexion.");
+      setTimeout(() => setValidationErreur(""), 4000);
+    } finally {
+      setValidationLoading(false);
+    }
   };
 
   // ─── Stats de complétion ───
@@ -371,6 +406,54 @@ function MaSemaine() {
         })}
       </div>
 
+      {/* ─── Boutons d'action en bas ─── */}
+      <div className="mt-8 space-y-3">
+
+        {/* Bouton Liste de courses */}
+        {fait > 0 && (
+          <button
+            onClick={() => setShowCourses(true)}
+            className="w-full py-3.5 rounded-2xl font-bold text-sm bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 transition-all flex items-center justify-center gap-2"
+          >
+            🛒 Liste de courses ({fait} repas sélectionnés)
+          </button>
+        )}
+
+        {/* Bouton Valider ma semaine */}
+        {fait > 0 && (
+          <button
+            onClick={validerSemaine}
+            disabled={validationLoading}
+            className={`w-full py-4 rounded-2xl font-bold text-lg transition-all duration-300 ${
+              validationOk
+                ? 'bg-green-500 text-white'
+                : validationLoading
+                  ? 'bg-amber-300 text-white cursor-not-allowed opacity-70'
+                  : 'bg-linear-to-r from-amber-500 to-amber-600 text-white shadow-lg hover:-translate-y-1 active:translate-y-0'
+            }`}
+          >
+            {validationOk
+              ? '✅ Semaine validée !'
+              : validationLoading
+                ? '⏳ Validation en cours...'
+                : `💾 Valider ma semaine (${fait}/28 repas)`
+            }
+          </button>
+        )}
+
+        {validationErreur && (
+          <p className="text-red-500 text-sm font-medium text-center animate-pulse">{validationErreur}</p>
+        )}
+      </div>
+
+      {/* ─── Modale Liste de courses hebdo ─── */}
+      {showCourses && (
+        <ModalCoursesHebdo
+          semaine={semaine}
+          onClose={() => setShowCourses(false)}
+        />
+      )}
+
       {/* ─── CSS utilitaire ─── */}
       <style>{`
         .scrollbar-hide::-webkit-scrollbar { display: none; }
@@ -381,6 +464,169 @@ function MaSemaine() {
           -webkit-box-orient: vertical;
           overflow: hidden;
         }
+      `}</style>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// Modale Liste de courses hebdomadaire
+// ═══════════════════════════════════════════════════════
+
+function ModalCoursesHebdo({ semaine, onClose }) {
+  const [ingredients, setIngredients] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [coches, setCoches] = useState({});
+  const [copie, setCopie] = useState(false);
+
+  useEffect(() => {
+    const charger = async () => {
+      try {
+        const res = await fetch(
+          `${API_URL}/menu_hebdo.php?action=courses&semaine=${semaine}`,
+          { headers: authHeaders() }
+        );
+        const data = await res.json();
+        if (data.success && data.ingredients) {
+          // Dédupliquer et regrouper
+          const cumul = {};
+          data.ingredients.forEach((ing) => {
+            const cle = ing.texte.toLowerCase().trim();
+            if (cumul[cle]) {
+              cumul[cle].count++;
+            } else {
+              cumul[cle] = { texte: ing.texte, count: 1 };
+            }
+          });
+          setIngredients(
+            Object.values(cumul).sort((a, b) => b.count - a.count)
+          );
+        }
+      } catch {
+        console.error("Erreur chargement courses");
+      } finally {
+        setLoading(false);
+      }
+    };
+    charger();
+    
+  }, [semaine]);
+
+  const toggleCoche = (idx) => {
+    setCoches((prev) => ({ ...prev, [idx]: !prev[idx] }));
+  };
+
+  const copierListe = () => {
+    const texte = ingredients
+      .map((ing, i) => `${coches[i] ? "✅" : "⬜"} ${ing.texte}`)
+      .join("\n");
+    navigator.clipboard.writeText(texte).then(() => {
+      setCopie(true);
+      setTimeout(() => setCopie(false), 2000);
+    });
+  };
+
+  const nbCoches = Object.values(coches).filter(Boolean).length;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+
+      <div className="relative bg-white w-full max-w-md max-h-[85vh] rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col animate-slideUp">
+        {/* Header */}
+        <div className="p-5 border-b border-gray-100 flex items-center justify-between shrink-0">
+          <div>
+            <h2 className="text-xl font-black text-gray-800">🛒 Courses de la semaine</h2>
+            <p className="text-xs text-gray-400 mt-1">
+              {ingredients.length} ingrédient{ingredients.length > 1 ? "s" : ""}
+              {nbCoches > 0 && ` · ${nbCoches} coché${nbCoches > 1 ? "s" : ""}`}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-10 h-10 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 transition-colors"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Liste */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-2">
+          {loading ? (
+            <div className="text-center py-8">
+              <div className="w-10 h-10 mx-auto rounded-full border-3 border-amber-200 border-t-amber-500 animate-spin mb-3" />
+              <p className="text-gray-400 text-sm">Chargement des ingrédients...</p>
+            </div>
+          ) : ingredients.length === 0 ? (
+            <div className="text-center py-8">
+              <p className="text-3xl mb-3">📝</p>
+              <p className="text-gray-400 text-sm">Aucun ingrédient.</p>
+              <p className="text-gray-300 text-xs mt-1">Sélectionne des repas pour voir la liste de courses.</p>
+            </div>
+          ) : (
+            ingredients.map((ing, idx) => (
+              <button
+                key={idx}
+                onClick={() => toggleCoche(idx)}
+                className={`w-full flex items-center gap-3 p-3 rounded-2xl text-left transition-all duration-200 ${
+                  coches[idx]
+                    ? "bg-green-50 border border-green-200"
+                    : "bg-gray-50 border border-transparent hover:bg-amber-50"
+                }`}
+              >
+                <span
+                  className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
+                    coches[idx]
+                      ? "bg-green-500 border-green-500 text-white"
+                      : "border-gray-300"
+                  }`}
+                >
+                  {coches[idx] && <span className="text-xs">✓</span>}
+                </span>
+                <span
+                  className={`text-sm flex-1 transition-all ${
+                    coches[idx] ? "text-gray-400 line-through" : "text-gray-700 font-medium"
+                  }`}
+                >
+                  {ing.texte}
+                </span>
+                {ing.count > 1 && (
+                  <span className="text-[10px] text-amber-500 font-bold bg-amber-50 px-2 py-0.5 rounded-full">
+                    ×{ing.count}
+                  </span>
+                )}
+              </button>
+            ))
+          )}
+        </div>
+
+        {/* Footer */}
+        {ingredients.length > 0 && (
+          <div className="p-5 border-t border-gray-100 flex gap-3 shrink-0">
+            <button
+              onClick={copierListe}
+              className={`flex-1 py-3 rounded-2xl font-bold text-sm transition-all ${
+                copie ? "bg-green-500 text-white" : "bg-amber-500 hover:bg-amber-600 text-white"
+              }`}
+            >
+              {copie ? "✅ Copié !" : "📋 Copier la liste"}
+            </button>
+            <button
+              onClick={() => setCoches({})}
+              className="px-4 py-3 rounded-2xl font-bold text-sm bg-gray-100 hover:bg-gray-200 text-gray-600 transition-all"
+            >
+              ↩️
+            </button>
+          </div>
+        )}
+      </div>
+
+      <style>{`
+        @keyframes slideUp {
+          from { opacity: 0; transform: translateY(100px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-slideUp { animation: slideUp 0.3s ease-out; }
       `}</style>
     </div>
   );
