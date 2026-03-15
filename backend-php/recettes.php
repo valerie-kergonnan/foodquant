@@ -5,6 +5,9 @@ header("Access-Control-Allow-Headers: Content-Type");
 header("Content-Type: application/json");
 if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') exit;
 
+// ─── V3 : Import BDD pour recettes locales ───
+require_once __DIR__ . '/db.php';
+
 // ─── V2 : Import du service de traduction ───
 require_once __DIR__ . '/traduction.php';
 
@@ -59,7 +62,68 @@ function saveToCache($key, $data, $cacheDir) {
     file_put_contents("$cacheDir/$key.json", json_encode($data));
 }
 
-// ─── Recherche de repas ───
+// ═══════════════════════════════════════════════════════
+// V3 : RECHERCHE DANS LES RECETTES LOCALES (prioritaire)
+// ═══════════════════════════════════════════════════════
+
+function chercherRecetteLocale($pdo, $type, $calories, $index) {
+    // Mapper les types Spoonacular vers les types locaux
+    $typeLocal = match($type) {
+        'breakfast' => 'breakfast',
+        'snack'     => 'snack',
+        default     => ($index === 3 ? 'dinner' : 'lunch'),
+    };
+
+    $calMin = max(0, $calories - 150);
+    $calMax = $calories + 200;
+
+    try {
+        $stmt = $pdo->prepare("
+            SELECT * FROM recettes_locales 
+            WHERE type_repas = ? AND calories BETWEEN ? AND ?
+            ORDER BY RAND() 
+            LIMIT 1
+        ");
+        $stmt->execute([$typeLocal, $calMin, $calMax]);
+        $row = $stmt->fetch();
+
+        if ($row) {
+            $ingredients = json_decode($row['ingredients_json'] ?? '[]', true) ?: [];
+            
+            error_log("✅ RECETTE LOCALE pour $typeLocal (index $index) : {$row['titre']}");
+            
+            return [
+                "id"             => (int)$row['id'] + 100000,
+                "title"          => $row['titre'],
+                "title_fr"       => $row['titre'],
+                "image"          => $row['image_url'] ?: "https://img.spoonacular.com/recipes/659109-312x231.jpg",
+                "sourceUrl"      => $row['source_url'] ?: "",
+                "ingredients_fr" => $ingredients,
+                "calories"       => (int)$row['calories'],
+                "protein"        => (int)$row['proteines'] . "g",
+                "nutrition"      => [
+                    "nutrients" => [
+                        ["name" => "Calories",      "amount" => (int)$row['calories']],
+                        ["name" => "Protein",       "amount" => (float)$row['proteines']],
+                        ["name" => "Fat",           "amount" => (float)$row['lipides']],
+                        ["name" => "Carbohydrates", "amount" => (float)$row['glucides']],
+                        ["name" => "Fiber",         "amount" => (float)$row['fibres']],
+                    ],
+                    "ingredients" => array_map(function($ing) {
+                        return ["name" => $ing, "amount" => 0, "unit" => ""];
+                    }, $ingredients),
+                ],
+                "source" => "local_fr",
+            ];
+        }
+    } catch (PDOException $e) {
+        error_log("⚠️ Erreur recettes locales : " . $e->getMessage());
+    }
+
+    return null; // Pas trouvé en local
+}
+
+// ─── Recherche de repas (Spoonacular) ───
 function chercherRepas($type, $calories, $apiKey, $diet, $index, $cacheDir, $quotaLockFile, $forceRefresh = false) {
     $cacheKey = getCacheKey($type, $calories, $diet);
 
@@ -230,7 +294,10 @@ function getFallback($type, $calories, $index) {
     ];
 }
 
-// ─── Exécution ───
+// ═══════════════════════════════════════════════════════
+// EXÉCUTION — V3 : Priorité recettes locales
+// ═══════════════════════════════════════════════════════
+
 $repartition = [0.25, 0.35, 0.10, 0.30];
 $types = ['breakfast', 'main course', 'snack', 'main course'];
 
@@ -238,11 +305,23 @@ $resultatFinal = [];
 for ($i = 0; $i < 4; $i++) {
     $cal = round($totalCalories * $repartition[$i]);
     $forceRefresh = ($refreshIndex !== null && $refreshIndex === $i);
-    $recette = chercherRepas($types[$i], $cal, $apiKey, $diet, $i, $cacheDir, $quotaLockFile, $forceRefresh);
+    
+    $recette = null;
 
-    // V2 : Traduire (sauf fallback, déjà en français)
-    if (($recette['source'] ?? '') !== 'fallback') {
-        $recette = traduireRecette($recette);
+    // V3 : Essayer d'abord les recettes locales (françaises, gratuites, cohérentes)
+    // Priorité donnée aux snacks locaux pour éviter les salades en collation
+    if (!$forceRefresh) {
+        $recette = chercherRecetteLocale($pdo, $types[$i], $cal, $i);
+    }
+
+    // Si pas trouvé en local → Spoonacular (API)
+    if (!$recette) {
+        $recette = chercherRepas($types[$i], $cal, $apiKey, $diet, $i, $cacheDir, $quotaLockFile, $forceRefresh);
+
+        // V2 : Traduire (sauf fallback et local, déjà en français)
+        if (($recette['source'] ?? '') !== 'fallback' && ($recette['source'] ?? '') !== 'local_fr') {
+            $recette = traduireRecette($recette);
+        }
     }
 
     $resultatFinal[] = $recette;
