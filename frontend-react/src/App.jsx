@@ -5,6 +5,7 @@ import MaJournee from './components/MaJournee';
 import NavBar from './components/NavBar';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
+import Footer from './components/Footer';
 
 const API_URL = 'https://foodquant-production.up.railway.app';
 
@@ -76,7 +77,6 @@ function App() {
   const handleLogout = () => {
     setUser(null);
     localStorage.removeItem('user');
-    // V2 Sécurité : Supprimer le JWT à la déconnexion
     localStorage.removeItem('jwt_token');
     setRecipes([]);
     setNutrimentsJour(null);
@@ -256,6 +256,7 @@ function App() {
     }
   };
 
+  // ─── Écran de chargement ───
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-linear-to-b from-amber-50 to-white">
@@ -271,86 +272,106 @@ function App() {
     );
   }
 
+  // ─── Déterminer si le footer doit s'afficher ───
+  // Le footer s'affiche sur toutes les pages sauf pendant le chargement
+  const afficherFooter = page === 'accueil' || page === 'login' || page === 'profil' || page === 'majournee' || page === 'dashboard';
+
   return (
-    <div className="flex flex-col items-center min-h-screen p-6 pb-24 font-sans text-gray-800">
-      
-      {toast && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 animate-toastIn">
-          <div className="bg-white border border-amber-200 shadow-xl rounded-2xl px-6 py-4 flex items-center gap-3 max-w-sm">
-            <span className="text-2xl">{toast.emoji}</span>
-            <p className="text-sm font-bold text-gray-700">{toast.message}</p>
+    <>
+      {/* ─── V3 Responsive : Structure Flexbox sticky footer ─── */}
+      <div className="flex flex-col min-h-screen font-sans text-gray-800">
+
+        {/* ─── NavBar fixe en haut ─── */}
+        <NavBar pageActive={page} onChangePage={setPage} isLoggedIn={!!user} onLogout={handleLogout} />
+
+        {/* ─── Toast notification (z-60 pour rester au-dessus de la NavBar z-50) ─── */}
+        {toast && (
+          <div className="fixed top-16 left-1/2 -translate-x-1/2 z-60 animate-toastIn">
+            <div className="bg-white border border-amber-200 shadow-xl rounded-2xl px-6 py-4 flex items-center gap-3 max-w-[90vw] sm:max-w-sm">
+              <span className="text-2xl">{toast.emoji}</span>
+              <p className="text-sm font-bold text-gray-700">{toast.message}</p>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      <style>{`
-        @keyframes toastIn {
-          from { opacity: 0; transform: translate(-50%, -20px); }
-          to { opacity: 1; transform: translate(-50%, 0); }
-        }
-        .animate-toastIn { animation: toastIn 0.4s ease-out; }
-      `}</style>
+        <style>{`
+          @keyframes toastIn {
+            from { opacity: 0; transform: translate(-50%, -20px); }
+            to { opacity: 1; transform: translate(-50%, 0); }
+          }
+          .animate-toastIn { animation: toastIn 0.4s ease-out; }
+        `}</style>
 
-      {page === "accueil" && <Accueil onCommencer={() => setPage(user ? "profil" : "login")} />}
-      {page === "login" && <Login onLogin={handleLogin} />}
-      {page === "profil" && <Profil onResultats={chercherRecettes} />}
+        {/* ─── V3 Responsive : Contenu principal avec flex-grow ───
+             pt-20 compense la NavBar fixe en haut (~80px)
+             pb-6 padding bas normal (plus de NavBar en bas)          */}
+        <main className="grow flex flex-col items-center p-4 pt-20 sm:p-6 sm:pt-20">
 
-      {page === "majournee" && (
-        recipes.length === 4 ? (
-          <div className="w-full">
-            <MaJournee
-              recipes={recipes}
-              nutrients={nutrimentsJour}
-              besoins={besoins}
-              onRefreshRecipe={remplacerUneRecette}
-              onEditProfil={() => setPage("profil")}
-            />
-            {user && (
-              <div className="w-full max-w-md mx-auto px-4 mb-8">
-                <button
-                  onClick={sauvegarderMenu}
-                  disabled={sauvLoading}
-                  className={`w-full py-4 rounded-2xl font-bold text-lg transition-all duration-300 ${
-                    menuSauvegarde
-                      ? 'bg-green-500 text-white'
-                      : sauvLoading
-                        ? 'bg-amber-300 text-white cursor-not-allowed opacity-70'
-                        : 'bg-linear-to-r from-amber-500 to-amber-600 text-white shadow-lg hover:-translate-y-1 active:translate-y-0'
-                  }`}
-                >
-                  {menuSauvegarde ? '✅ Menu sauvegardé !' : sauvLoading ? '⏳ Sauvegarde en cours...' : '💾 Sauvegarder mon menu du jour'}
-                </button>
-                {sauvErreur && (
-                  <p className="text-red-500 text-sm font-medium text-center mt-2 animate-pulse">{sauvErreur}</p>
+          {page === "accueil" && <Accueil onCommencer={() => setPage(user ? "profil" : "login")} />}
+          {page === "login" && <Login onLogin={handleLogin} />}
+          {page === "profil" && <Profil onResultats={chercherRecettes} />}
+
+          {page === "majournee" && (
+            recipes.length === 4 ? (
+              <div className="w-full">
+                <MaJournee
+                  recipes={recipes}
+                  nutrients={nutrimentsJour}
+                  besoins={besoins}
+                  onRefreshRecipe={remplacerUneRecette}
+                  onEditProfil={() => setPage("profil")}
+                />
+                {user && (
+                  <div className="w-full max-w-md mx-auto px-4 mb-8">
+                    <button
+                      onClick={sauvegarderMenu}
+                      disabled={sauvLoading}
+                      className={`w-full py-4 rounded-2xl font-bold text-lg transition-all duration-300 ${
+                        menuSauvegarde
+                          ? 'bg-green-500 text-white'
+                          : sauvLoading
+                            ? 'bg-amber-300 text-white cursor-not-allowed opacity-70'
+                            : 'bg-linear-to-r from-amber-500 to-amber-600 text-white shadow-lg hover:-translate-y-1 active:translate-y-0'
+                      }`}
+                    >
+                      {menuSauvegarde ? '✅ Menu sauvegardé !' : sauvLoading ? '⏳ Sauvegarde en cours...' : '💾 Sauvegarder mon menu du jour'}
+                    </button>
+                    {sauvErreur && (
+                      <p className="text-red-500 text-sm font-medium text-center mt-2 animate-pulse">{sauvErreur}</p>
+                    )}
+                  </div>
                 )}
               </div>
-            )}
-          </div>
-        ) : (
-          <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-            <p className="text-gray-500 text-lg">Aucun repas généré</p>
-            <button onClick={() => setPage("profil")} className="bg-amber-500 text-white font-bold py-3 px-6 rounded-2xl hover:-translate-y-1 transition-all">
-              ✏️ Remplir mon profil
-            </button>
-          </div>
-        )
-      )}
+            ) : (
+              <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
+                <p className="text-gray-500 text-lg">Aucun repas généré</p>
+                <button onClick={() => setPage("profil")} className="bg-amber-500 text-white font-bold py-3 px-6 rounded-2xl hover:-translate-y-1 transition-all">
+                  ✏️ Remplir mon profil
+                </button>
+              </div>
+            )
+          )}
 
-      {page === "dashboard" && (
-        user ? (
-          <Dashboard user={user} besoins={besoins} />
-        ) : (
-          <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-            <p className="text-gray-500 text-lg">Connecte-toi pour voir tes stats</p>
-            <button onClick={() => setPage("login")} className="bg-amber-500 text-white font-bold py-3 px-6 rounded-2xl">
-              🔑 Se connecter
-            </button>
-          </div>
-        )
-      )}
+          {page === "dashboard" && (
+            user ? (
+              <Dashboard user={user} besoins={besoins} />
+            ) : (
+              <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
+                <p className="text-gray-500 text-lg">Connecte-toi pour voir tes stats</p>
+                <button onClick={() => setPage("login")} className="bg-amber-500 text-white font-bold py-3 px-6 rounded-2xl">
+                  🔑 Se connecter
+                </button>
+              </div>
+            )
+          )}
 
-      <NavBar pageActive={page} onChangePage={setPage} isLoggedIn={!!user} onLogout={handleLogout} />
-    </div>
+        </main>
+
+        {/* ─── V3 Responsive : Footer visible sur toutes les pages ─── */}
+        {afficherFooter && <Footer />}
+
+      </div>
+    </>
   );
 }
 

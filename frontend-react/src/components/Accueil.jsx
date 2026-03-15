@@ -102,8 +102,7 @@ function Accueil({ onCommencer }) {
         </div>
       </section>
 
-      {/* 4. Footer avec liens légaux */}
-      <Footer />
+      
     </div>
   );
 }

@@ -144,30 +144,45 @@ function Footer() {
 
   return (
     <>
-      <footer className="w-full bg-gray-50 border-t border-gray-100 py-8 px-6 mt-12">
-        <div className="max-w-4xl mx-auto text-center space-y-4">
+      {/* ─── V3 Responsive : Footer sticky avec mt-auto ───
+           mt-auto   → pousse le footer en bas dans le flex container parent
+           px-4      → padding mobile confortable
+           md:px-6   → padding desktop élargi                                */}
+      <footer className="w-full bg-gray-50 border-t border-gray-100 py-6 px-4 md:py-8 md:px-6 mt-auto">
+        <div className="max-w-4xl mx-auto text-center space-y-3 md:space-y-4">
+
+          {/* ─── Titre ─── */}
           <p className="text-sm font-bold text-gray-700">FoodQuant</p>
-          <div className="flex flex-wrap justify-center gap-4">
+
+          {/* ─── V3 Responsive : Liens légaux ───
+               flex-col sur mobile → liens empilés, plus lisibles
+               sm:flex-row         → liens en ligne à partir de 640px
+               gap-2 / sm:gap-4    → espacement adaptatif
+               Les boutons ont une taille tactile suffisante (min 44px de hauteur) */}
+          <div className="flex flex-col sm:flex-row flex-wrap justify-center gap-2 sm:gap-4">
             {liens.map(lien => (
               <button
                 key={lien.id}
                 onClick={() => setModale(lien.id)}
-                className="text-xs text-gray-400 hover:text-amber-600 transition-colors underline"
+                className="text-xs sm:text-sm text-gray-400 hover:text-amber-600 active:text-amber-700 transition-colors underline py-2 sm:py-0 min-h-11 sm:min-h-0 flex items-center justify-center"
               >
                 {lien.label}
               </button>
             ))}
             <a
               href="mailto:foodquant.app@gmail.com"
-              className="text-xs text-gray-400 hover:text-amber-600 transition-colors underline"
+              className="text-xs sm:text-sm text-gray-400 hover:text-amber-600 active:text-amber-700 transition-colors underline py-2 sm:py-0 min-h-11 sm:min-h-0 flex items-center justify-center"
             >
               Contact
             </a>
           </div>
-          <p className="text-[10px] text-gray-300">© 2026 FoodQuant — Valérie K. Tous droits réservés.</p>
+
+          {/* ─── Copyright ─── */}
+          <p className="text-[10px] sm:text-xs text-gray-300">© 2026 FoodQuant — Valérie K. Tous droits réservés.</p>
         </div>
       </footer>
 
+      {/* ─── Modales légales ─── */}
       {modale && modales[modale] && (
         <ModaleLegale
           titre={modales[modale].titre}
